@@ -1,87 +1,131 @@
 #include <ncurses.h>
+#include <time.h>
+#include <stdlib.h>
 
-#define corIniX 2
-#define corIniY 1
+int main()
+{
+    WINDOW *ventana;
+    WINDOW *panel;
 
-#define maxCorY 21
-#define maxCorX 42
+    int tecla;
+    int vida = 100;
+    int oxigeno = 100;
+    int x = 10;
+    int y = 10;
 
-#define filas 11
-#define columnas 11
+    int enemigoX;
+    int enemigoY;
 
+    int contador = 0;
 
-int main() {
+    // FECHA
+    time_t t;
+    struct tm *fecha;
+
     initscr();
+
     noecho();
+    cbreak();
     curs_set(0);
+
+    timeout(50);
+
+    ventana = newwin(40, 100, 1, 1);
+
+    keypad(ventana, TRUE);
+
+    panel = newwin(7, 40, 1, 105);
+
+    srand(time(NULL));
+
+    enemigoX = rand() % 88 + 2;
+    enemigoY = rand() % 38 + 2;
+
+    while (1)
+    {
+        // actualizar hora
+        time(&t);
+        fecha = localtime(&t);
+
+        werase(ventana);
+        werase(panel);
+
     
-    int x = corIniX;
-    int y = corIniY;
+        box(ventana, '|', '=');
+        box(panel, '|', '-');
 
-    int celAlt = 2; // altura de cada celda
-    int celAnch = 4; // ancho de cada celda
+        // nave
+        mvwprintw(ventana, y, x, "N");
 
-    refresh();
-    getch();
-    endwin();
+        mvwprintw(ventana, enemigoY, enemigoX, " /\\ ");
+        mvwprintw(ventana, enemigoY + 1, enemigoX, "<**>");
+        mvwprintw(ventana, enemigoY + 2, enemigoX, " \\/ ");
 
-    while (1) {
-        clear();
+        if ((x >= enemigoX && x <= enemigoX + 3) && (y >= enemigoY && y <= enemigoY + 2))
+        {
+            vida -= 10;
+            oxigeno --;
+            // mover enemigo
+            enemigoX = rand() % 88 + 2;
+            enemigoY = rand() % 38 + 2;
+            
+        }else if (vida==0)
+        {
+            mvwprintw(ventana, 20, 40, "GAME OVER :(((");
+            wrefresh(ventana);
+            getch();
+            break;
+        }
+        
+        // pandel DE textooooo
+        mvwprintw(panel, 1, 1, "VIDA: %d", vida);
+        mvwprintw(panel, 2, 1, "OXIGENO: %d", oxigeno);
+        mvwprintw(panel,3,  1,"TIEMPO EN EL ESPACIO: %02d:%02d:%02d :)  ",fecha->tm_hour, fecha->tm_min, fecha->tm_sec);
 
-        // Dibujar líneas horizontales
-        for (int i = 0; i <= filas; i++) {
-            for (int j = 0; j <= columnas * celAnch; j++) {
-                mvaddch(i * celAlt, j, '-');
-            }
+        contador++;
+
+        // mover enemigo cada cierto tiempo
+        if(contador % 50 == 0)
+        {
+            enemigoX = rand() % 88 + 2;
+            enemigoY = rand() % 38 + 2;
         }
 
-        // Dibujar líneas verticales
-        for (int i = 0; i <= filas * celAlt; i++) {
-            for (int j = 0; j <= columnas; j++) {
-                mvaddch(i, j * celAnch, '|');
-            }
-        }
+        // mostrar
+        wrefresh(ventana);
+        wrefresh(panel);
 
-        // Dibujar intersecciones
-        for (int i = 0; i <= filas; i++) {
-            for (int j = 0; j <= columnas; j++) {
-                mvaddch(i * celAlt, j * celAnch, '+');
-            }
-        }
+        // leer tecla
+        tecla = wgetch(ventana);
 
-        mvaddch(y, x, 'X');
-
-        refresh();
-
-        char c = getch();
-
-        switch(c) {
-
-            case 'w': y=y-celAlt;
-            if(y==-1){
-                y=maxCorY;
-            }
+        if(tecla == 'q')
             break;
 
-            case 's': y=y+celAlt; 
-            if(y>maxCorY){
-                y=corIniY;
-            }
-            break;
+        switch(tecla)
+        {
+            case 'w':
+                if(y > 1)
+                    y--;
+                break;
 
-            case 'a': x=x-celAnch; 
-            if(x<0){
-                x=maxCorX;
-            }
-            break;
+            case 's':
+                if(y < 38)
+                    y++;
+                break;
 
-            case 'd': x=x+celAnch; 
-            if(x>maxCorX){
-                x=corIniX;
-            }
-            break;
+            case 'a':
+                if(x > 1)
+                    x--;
+                break;
+
+            case 'd':
+                if(x < 98)
+                    x++;
+                break;
         }
     }
-    
+
+    endwin();
+
     return 0;
-}   
+}
