@@ -3,70 +3,134 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+/**
+ * Mejoras a realizar:
+ * - Hilo principal de oxigeno y combustible.
+ * - Se descuenta oxigeno cada vez que la nave se mueve en un intervalo de 5 segundos.
+ * - Cada vez que choco con un asteroide, se descuenta 1 de oxigeno y de combustible se descuenta 3, todo eso cuando colisiono.
+ */
 
- int vida = 100;
+ // Variables compartidas para el estado de la nave
  int oxigeno = 100;
- int combustible = 50;
+ int combustible = 100;
+
+ //posicion de la nave y del enemigo
+ int x = 10;
+ int y = 10;
+ int enemigoX;
+ int enemigoY;
+
+ //variable para detener los hilos si hay "GAME OVER"
+ int juego_activo = 1;
 
  // Mutex para proteger el acceso a las variables compartidas
- phthread_mutex_t mutex_nave = PTHREAD_MUTEX_INITIALIZER;
+ pthread_mutex_t mutex_nave = PTHREAD_MUTEX_INITIALIZER;
+ pthread_mutex_t mutex_pantalla = PTHREAD_MUTEX_INITIALIZER; // Mutex para proteger el acceso a la pantalla, para evitar que los hilos se pisen entre ellos al escribir en la pantalla.
 
+ /**
+  * Hilo de soporte vital: es el que se encargara de decrementar oxigeno de manera periodica. 
+  * */
  void* hilo_soporte_vital(void* arg) {
-    while (1) {
+    while (juego_activo) {
 
-        sleep(10);
+        sleep(5);        
         pthread_mutex_lock(&mutex_nave);
-        
+
         if (oxigeno > 0) {
             oxigeno--;
         }
 
-        int estado_oxigeno = oxigeno;
-        int estado_vida = vida;
+        if (oxigeno <= 0) {
+            juego_activo = 0; // Avisa al resto que perdimos
+        }
 
         pthread_mutex_unlock(&mutex_nave);
-
-        // Si morimos, este hilo también tiene que terminar
-        if (estado_vida <= 0 || estado_oxigeno <= 0) {
-            break; 
-        }
     }
     return NULL;
 }
 
 /**
- * Lo que se mejoro en esta version fue:
- * 
+ * Hilo de propulsion: es el que se encargara de decrementar combustible cada vez que hay movimiento mediante teclado 
+ * o porque choque contra un asteroide.
  */
+void* hilo_propulsion(void* arg) {
+    
+    WINDOW *ventana = (WINDOW *)arg;    
+    int tecla;
+
+    while (juego_activo) {
+        pthread_mutex_lock(&mutex_pantalla);
+        tecla = wgetch(ventana);
+        pthread_mutex_unlock(&mutex_pantalla);
+
+        if (tecla == 'q') {
+            juego_activo = 0; // Avisa al resto que perdimos
+            break;
+        }
+
+        // Si se apretó una tecla de movimiento, operamos
+        if (tecla == 'w' || tecla == KEY_UP || 
+            tecla == 's' || tecla == KEY_DOWN || 
+            tecla == 'a' || tecla == KEY_LEFT || 
+            tecla == 'd' || tecla == KEY_RIGHT) 
+        {
+            pthread_mutex_lock(&mutex_nave);
+            
+            // Solo nos movemos si hay combustible
+            if (combustible > 0) {
+                if ((tecla == 'w' || tecla == KEY_UP) && y > 1) { y--; combustible--; }
+                if ((tecla == 's' || tecla == KEY_DOWN) && y < 38) { y++; combustible--; }
+                if ((tecla == 'a' || tecla == KEY_LEFT) && x > 1) { x--; combustible--; }
+                if ((tecla == 'd' || tecla == KEY_RIGHT) && x < 95) { x++; combustible--; }
+            }
+
+            if (combustible <= 0) {
+                juego_activo = 0; // Nos quedamos sin nafta
+            }
+            
+            pthread_mutex_unlock(&mutex_nave);
+        }
+        usleep(10000);
+    }
+    return NULL;    
+}
+
+
 int main()
 {
+    //variables para la ventana y el panel de informacion
     WINDOW *ventana;
     WINDOW *panel;
 
-    int tecla;
-   
-    int x = 10;
-    int y = 10;
-
-    int enemigoX;
-    int enemigoY;
-
+    //variable para la tecla que se presiona
     int contador = 0;
 
-    // FECHA
+    //variables de fecha y hora
     time_t t;
     struct tm *fecha;
 
+    /**
+     Inicializamos ncurses, configuramos la ventana y el panel, y generamos la posicion inicial del enemigo de manera aleatoria.
+     Tambien se agrego box() para que se vea mas bonito y organizado, y se creo el hilo de soporte vital para que se ejecute en paralelo con el hilo principal del juego.
+     */
     initscr();
     noecho();
     cbreak();
     curs_set(0);
 
+    /**
+     * Se configuro la ventana principal del juego con un tamaño de 40 filas y 100 columnas, y se posiciona en la coordenada (1, 1) de la terminal.
+     * Se configuro el panel de informacion con un tamaño de 7 filas y 40 columnas, y se posiciona en la coordenada (1, 105) de la terminal,
+     * para que quede al lado derecho de la ventana principal.
+     */
     ventana = newwin(40, 100, 1, 1);
     wtimeout(ventana, 50);
     keypad(ventana, TRUE);
     panel = newwin(7, 40, 1, 105);
 
+    /**
+     * Generamos la posicion inicial del enemigo de manera aleatoria, para que cada vez que se inicie el juego, el enemigo aparezca en una posicion diferente, y asi sea mas divertido jugar.
+     */
     srand(time(NULL));
     enemigoX = rand() % 95 + 1;
     enemigoY = rand() % 36 + 1;
@@ -76,66 +140,45 @@ int main()
      */
     box(ventana, '|', '=');
     box(panel, '|', '-');
-
-    while (1)
-    {
-        // nave y enemigo
-        mvwprintw(ventana, y, x, "N");
-        mvwprintw(ventana, enemigoY, enemigoX, " /\\ ");
-        mvwprintw(ventana, enemigoY + 1, enemigoX, "<**>");
-        mvwprintw(ventana, enemigoY + 2, enemigoX, " \\/ ");
-
-        // actualizar hora
-        time(&t);
-        fecha = localtime(&t);
-        //panel de texto
-        mvwprintw(panel, 1, 1, "VIDA: %-3d", vida);
-        mvwprintw(panel, 2, 1, "OXIGENO: %-3d", oxigeno);
-        mvwprintw(panel,3,  1,"TIEMPO EN EL ESPACIO: %02d:%02d:%02d :)  ",fecha->tm_hour, fecha->tm_min, fecha->tm_sec);
-
-        wrefresh(ventana);
-        wrefresh(panel);
     
-        tecla = wgetch(ventana);
+    // Iniciamos los hilos y les pasamos lo que necesitan
+    pthread_t thread_vital, thread_propulsion;
+    pthread_create(&thread_vital, NULL, hilo_soporte_vital, NULL);
+    pthread_create(&thread_propulsion, NULL, hilo_propulsion, (void *)ventana);
 
-        if(tecla == 'q') break;
+    /**
+     * Agregamos estas variables antes del while para que se puedan borrar las 
+     * posiciones viejas de la nave y del enemigo, para que no queden fantasmas en la pantalla,
+     * y asi se vea mas limpio el movimiento de la nave y del enemigo.
+     */
+    int viejo_x = x;
+    int viejo_y = y;
+    int viejo_enemigoX = enemigoX;
+    int viejo_enemigoY = enemigoY;
 
-        //borramos las posiciones vieja de la nave
-        mvwprintw(ventana, y, x, " ");
-        //borramos las posiciones viejas del enemigo
-        mvwprintw(ventana, enemigoY, enemigoX, "    ");
-        mvwprintw(ventana, enemigoY + 1, enemigoX, "    ");
-        mvwprintw(ventana, enemigoY + 2, enemigoX, "    ");
+    while (juego_activo) {
+
+        // Bloqueamos la pantalla para dibujar tranquilos sin que el hilo de propulsión interrumpa
+        pthread_mutex_lock(&mutex_pantalla);
 
         /**
-         * Aca agregue para que se pueda aparte de mover con 'wasd', tambien se pueda mover con las flechitas.
+         * Guardamos las posiciones viejas de la nave y del enemigo, para que se puedan borrar en la siguiente iteracion
+         * del while, y asi no queden "fantasmas" en la pantalla, y se vea mas limpio el movimiento de la nave y del enemigo.
          */
-        switch(tecla)
-        {
-            case 'w':
-            case KEY_UP:
-                if(y > 1)
-                    y--;
-                break;
-
-            case 's':
-            case KEY_DOWN:
-                if(y < 38)
-                    y++;
-                break;
-
-            case 'a':
-            case KEY_LEFT:
-                if(x > 1)
-                    x--;
-                break;
-
-            case 'd':
-            case KEY_RIGHT:
-                if(x < 95)
-                    x++;
-                break;
-        }
+        mvwprintw(ventana, viejo_y, viejo_x, " ");
+        mvwprintw(ventana, viejo_enemigoY, viejo_enemigoX, "    ");
+        mvwprintw(ventana, viejo_enemigoY + 1, viejo_enemigoX, "    ");
+        mvwprintw(ventana, viejo_enemigoY + 2, viejo_enemigoX, "    ");
+        
+      
+        /**
+         * Borramos posiciones viejas de la nave y del enemigo, para que no queden "fantasmas" 
+         * en la pantalla, y asi se vea mas limpio el movimiento de la nave y del enemigo.
+         */
+        //mvwprintw(ventana, y, x, " ");
+        //mvwprintw(ventana, enemigoY, enemigoX, "    ");
+        //mvwprintw(ventana, enemigoY + 1, enemigoX, "    ");
+        //mvwprintw(ventana, enemigoY + 2, enemigoX, "    ");
 
         // calcular distancia entre nave y enemigo
         int dist_x = abs(x - enemigoX);
@@ -146,48 +189,76 @@ int main()
 
             // mover enemigo hacia la nave si esta cerca
             if (dist_x < 15 && dist_y < 15) {
-                if (enemigoX < x) {
-                    enemigoX--;
-                } else if (enemigoX > x) {
-                    enemigoX++;
-                }    
-                if (enemigoY < y) {
-                    enemigoY--;
-                } else if (enemigoY > y) {
-                    enemigoY++;
-                }
+                if (enemigoX < x) enemigoX--; else if (enemigoX > x) enemigoX++;    
+                if (enemigoY < y) enemigoY--; else if (enemigoY > y) enemigoY++;
 
-                // limitar movimiento del enemigo dentro de la ventana
-                if (enemigoX < 1) enemigoX = 1;
-                if (enemigoX > 95) enemigoX = 95; // Tope corregido
-                if (enemigoY < 1) enemigoY = 1;
-                if (enemigoY > 36) enemigoY = 36;
-            }            
+                if (enemigoX < 1) enemigoX = 1; if (enemigoX > 95) enemigoX = 95; 
+                if (enemigoY < 1) enemigoY = 1; if (enemigoY > 36) enemigoY = 36;
+            }
         }
 
         /**
-         *colision: por si el enemigo esta cerca de la nave, le resta vida y oxigeno a la nave,
-          y mueve al enemigo a una posicion aleatoria, para que se mueva el asteroide.
+         * Colision: si la nave colisiona con el enemigo, se descuenta 1 de oxigeno y 3 de combustible, y el enemigo se reposiciona
+         * en una nueva posicion aleatoria, para que el juego sea mas dinamico y divertido, y asi no quede estatico el enemigo en una sola posicion.
          */
-        if ((x >= enemigoX && x <= enemigoX + 3) && (y >= enemigoY && y <= enemigoY + 2))
-        {
-            vida -= 10;
-            oxigeno --;
-            // mover enemigo
+        if ((x >= enemigoX && x <= enemigoX + 3) && (y >= enemigoY && y <= enemigoY + 2)) {
+            pthread_mutex_lock(&mutex_nave);
+            oxigeno -= 1;
+            combustible -= 3;
+            if (oxigeno <= 0 || combustible <= 0) juego_activo = 0;
+            pthread_mutex_unlock(&mutex_nave);
+
             enemigoX = rand() % 95 + 1;
             enemigoY = rand() % 36 + 1;   
-        } else if (vida <= 0 || oxigeno <= 0)
-        {
-            mvwprintw(ventana, 20, 40, "GAME OVER :(((");
-            // esto estaba arriba del todo, lo que hacia titilar la pantalla cada vez que movia la navecita.
-            wrefresh(ventana);
-            wtimeout(ventana, -1);
-            wgetch(ventana);
-            break;
         }
 
+        /**
+         * Guardamos las posiciones viejas de la nave y del enemigo, para que se puedan borrar en la siguiente iteracion
+         * del while, y asi no queden "fantasmas" en la pantalla, y se vea mas limpio el movimiento de la nave y del enemigo.
+         */
+        viejo_x = x;
+        viejo_y = y;
+        viejo_enemigoX = enemigoX;
+        viejo_enemigoY = enemigoY;
+          
+        /**
+         * Nave y asteroide
+         */
+        mvwprintw(ventana, y, x, "A");
+        mvwprintw(ventana, enemigoY, enemigoX, " /\\ ");
+        mvwprintw(ventana, enemigoY + 1, enemigoX, "<**>");
+        mvwprintw(ventana, enemigoY + 2, enemigoX, " \\/ ");
+
+        // actualizar hora
+        time(&t);
+        fecha = localtime(&t);
+
+        //panel de texto
+        pthread_mutex_lock(&mutex_nave);
+        mvwprintw(panel, 2, 1, "OXIGENO:     %-3d", oxigeno);
+        mvwprintw(panel, 3, 1, "COMBUSTIBLE: %-3d", combustible);
+        mvwprintw(panel, 4, 1, "TIEMPO EN EL ESPACIO: %02d:%02d:%02d :)  ",fecha->tm_hour, fecha->tm_min, fecha->tm_sec);
+        pthread_mutex_unlock(&mutex_nave);
+
+        wrefresh(ventana);
+        wrefresh(panel);
+
+        pthread_mutex_unlock(&mutex_pantalla); // Liberamos la pantalla
+
+        // Pausa del radar para no consumir 100% de CPU
+        usleep(50000);
         contador++;
     }
+
+    // Fuera del while (juego_activo == 0 significa Game Over)
+    mvwprintw(ventana, 20, 40, "GAME OVER :(((");
+    wrefresh(ventana);
+    wtimeout(ventana, -1);
+    wgetch(ventana);
+
+    // Esperamos a que los hilos terminen prolijamente antes de cerrar
+    pthread_cancel(thread_vital);
+    pthread_join(thread_propulsion, NULL);
 
     endwin();
     return 0;
