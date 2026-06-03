@@ -3,16 +3,15 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
-/**
- * Mejoras a realizar:
- * - Hilo principal de oxigeno y combustible.
- * - Se descuenta oxigeno cada vez que la nave se mueve en un intervalo de 5 segundos.
- * - Cada vez que choco con un asteroide, se descuenta 1 de oxigeno y de combustible se descuenta 3, todo eso cuando colisiono.
- */
 
  // Variables compartidas para el estado de la nave
  int oxigeno = 100;
- int combustible = 100;
+ int combustible = 10000;
+
+ //variables de mineria
+ int deuterio = 0;
+ int asteroide_recursos = 50; // Minerales disponibles en el asteroide 
+ int extraer = 0; // bandera para comunicar el teclado con el hilo minero
 
  //posicion de la nave y del enemigo
  int x = 10;
@@ -50,6 +49,42 @@
 }
 
 /**
+ * Hilo de extraccion: extraccion minera en el cual la nave va a estraer minerales del asteroide.
+ * La extraccion se realiza con la tecla 'e'. solo si la nave esta a 5 casilleros de distancia ya sea
+ * por izquierda, derecha, arriba o abajo del asteriode, si el asteroiode tiene recursos disponibles,
+ * la nave tiene recursos.
+ * como notamos en la segunda condicion del if, cada vez que se le quita recursos al asteroide,
+ * se le resta 2 unidades de combustible a nuestra nave y se le resta 5 unidades de recursos al asteroide,
+ * y tenemos 5 de deuterio extra.
+ */
+void* hilo_extraccion(void* arg) {
+    while (juego_activo) {
+
+        if (extraer == 1) {
+            pthread_mutex_lock(&mutex_nave);
+
+            //distancia del enemigo, lo vamos a declarar en un rango de 5 casilleros
+            int dist_x = abs(x - enemigoX);
+            int dist_y = abs(y - enemigoY);
+
+            //aca si, verificamos que este en un rango de 5 casilleros respecto del asteroide
+            if (dist_x <= 5 && dist_y <= 5) {
+                if (asteroide_recursos > 0 && combustible >= 2) {
+                    asteroide_recursos -= 5; // Extraemos 5 unidades del asteroide
+                    deuterio += 5; // Agregamos 5 unidades a nuestro deuter
+                    combustible -= 2; // Extraer consume combustible
+                }
+            }
+
+            extraer = 0; // Reiniciamos la bandera
+            pthread_mutex_unlock(&mutex_nave);
+        }
+        usleep(20000); // Pequeña pausa para no consumir 100% de CPU
+    }
+    return NULL;
+}
+
+/**
  * Hilo de propulsion: es el que se encargara de decrementar combustible cada vez que hay movimiento mediante teclado 
  * o porque choque contra un asteroide.
  */
@@ -66,6 +101,11 @@ void* hilo_propulsion(void* arg) {
         if (tecla == 'q') {
             juego_activo = 0; // Avisa al resto que perdimos
             break;
+        }
+
+        //AGREGAMOS NUEVA FUNCIONALIDAD: EXTRAER RECURSOS DEL ASTEROIDE CON LA TECLA 'e'
+        if (tecla == 'e') {
+            extraer = 1; // Le avisa1mos al hilo de extraccion que queremos extraer recursos
         }
 
         // Si se apretó una tecla de movimiento, operamos
@@ -142,8 +182,10 @@ int main()
     box(panel, '|', '-');
     
     // Iniciamos los hilos y les pasamos lo que necesitan
+    //agregamos el hilo de extraccion
     pthread_t thread_vital, thread_propulsion;
     pthread_create(&thread_vital, NULL, hilo_soporte_vital, NULL);
+    pthread_create(&thread_propulsion, NULL, hilo_extraccion, NULL);
     pthread_create(&thread_propulsion, NULL, hilo_propulsion, (void *)ventana);
 
     /**
@@ -237,12 +279,13 @@ int main()
         pthread_mutex_lock(&mutex_nave);
         mvwprintw(panel, 2, 1, "OXIGENO:     %-3d", oxigeno);
         mvwprintw(panel, 3, 1, "COMBUSTIBLE: %-3d", combustible);
-        mvwprintw(panel, 4, 1, "TIEMPO EN EL ESPACIO: %02d:%02d:%02d :)  ",fecha->tm_hour, fecha->tm_min, fecha->tm_sec);
+        mvwprintw(panel, 5, 1, "BODEGA DEUT:   %-3d", deuterio);
+        mvwprintw(panel, 6, 1, "RECURSOS AST.: %-3d", asteroide_recursos);
+        mvwprintw(panel, 8, 1, "TIEMPO EN EL ESPACIO: %02d:%02d:%02d :)  ",fecha->tm_hour, fecha->tm_min, fecha->tm_sec);
         pthread_mutex_unlock(&mutex_nave);
 
         wrefresh(ventana);
         wrefresh(panel);
-
         pthread_mutex_unlock(&mutex_pantalla); // Liberamos la pantalla
 
         // Pausa del radar para no consumir 100% de CPU
@@ -258,6 +301,7 @@ int main()
 
     // Esperamos a que los hilos terminen prolijamente antes de cerrar
     pthread_cancel(thread_vital);
+    pthread_cancel(thread_propulsion); // Detenemos el hilo de propulsión
     pthread_join(thread_propulsion, NULL);
 
     endwin();
