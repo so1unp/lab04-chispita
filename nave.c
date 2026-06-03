@@ -23,7 +23,7 @@ int main() {
     setlocale(LC_ALL, "");
     initscr();
     noecho();
-    curs_set(0);
+    curs_set(0); 
     nodelay(stdscr, TRUE);
 
     start_color();
