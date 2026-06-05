@@ -27,7 +27,8 @@
 
 /*-----VARIABLES INICIALIZADAS-----*/
 char *nave, *modo;
-int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c;
+int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, ini;
+clock_t ult;
 
 /*SIN LÓGICA APLICADA*/
 int combustible, oxigeno, naves, mutexio, semaforita, kernelio;
@@ -77,37 +78,45 @@ void *movimientoNave(void *arg){
     while(1){
         c = getch();
         if(!modoDisparo){
-
-            /*MODO NAVE*/
-            switch(c) {
-                
-                case 'w': y=y-celAlt;
-                nave= "↑";
-                if(y<corIniY){
-                    y=maxCorY;
-                }
-                break;
-            
-                case 's': y=y+celAlt; 
-                nave= "↓";
-                if(y>maxCorY){
-                    y=corIniY;
-                }
-                break;
+            if(c!=ERR){
+                clock_t ahora = clock();
+                if(!ini || (ahora-ult)>=CLOCKS_PER_SEC){
                     
-                case 'a': x=x-celAnch; 
-                nave= "←";
-                if(x<corIniX){
-                    x=maxCorX;
-                }
-                break;
+                    /*MODO NAVE*/
+                    switch(c) {
+                        
+                        case 'w': y=y-celAlt;
+                        nave= "↑";
+                        if(y<corIniY){
+                            y=maxCorY;
+                        }
+                        break;
                     
-                case 'd': x=x+celAnch; 
-                nave= "→";
-                if(x>maxCorX){
-                    x=corIniX;
+                        case 's': y=y+celAlt; 
+                        nave= "↓";
+                        if(y>maxCorY){
+                            y=corIniY;
+                        }
+                        break;
+                            
+                        case 'a': x=x-celAnch; 
+                        nave= "←";
+                        if(x<corIniX){
+                            x=maxCorX;
+                        }
+                        break;
+                            
+                        case 'd': x=x+celAnch; 
+                        nave= "→";
+                        if(x>maxCorX){
+                            x=corIniX;
+                        }
+                        break;
+                    }
+                    ult=ahora;
+                    ini=1;
+                    dibujarPantalla(); // DIBUJO LA INTERFAZ CADA VEZ QUE MUEVA LA NAVE (REDUCE CARGA DE CPU)
                 }
-                break;
             }
         }
 
@@ -133,10 +142,12 @@ void *movimientoNave(void *arg){
             case 'e':
             modoDisparo = !modoDisparo;
                 
-            if(modoDisparo){
+            if(modoDisparo){ // cambio el texto de 'modo' y dibujo
                 modo= "DISP";
+                dibujarPantalla(); 
             }else{
                 modo= "NAVE";
+                dibujarPantalla();
             }
             break;
         }
@@ -147,7 +158,7 @@ void *movimientoNave(void *arg){
             exit(0);
             break;
         }
-        dibujarPantalla(); // CADA VEZ QUE SE MUEVA LA NAVE SE DIBUJARÁ LA INTERFAZ
+
         attron(COLOR_PAIR(2));
         mvaddstr(y, x, nave);
         attroff(COLOR_PAIR(2));
@@ -159,10 +170,13 @@ int main() {
     initscr();
     noecho();
     curs_set(0);
-    //nodelay(stdscr, TRUE); // SI LO QUITO REDUCE PARPADEOS Y USA MENOS CPU
+    nodelay(stdscr, TRUE); // SI LO QUITO REDUCE PARPADEOS Y USA MENOS CPU
 
     pthread_t hilo_mov;
     int resHilo;
+
+    ini = 0;
+    ult = 0;
 
     start_color();
     init_color(8, 200, 200, 200); // gris
