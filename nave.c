@@ -1,6 +1,11 @@
+
 /*
     COMANDO PARA COMPILAR:
-    gcc nave.c -lncursesw -o nave
+    gcc nave.c -lncursesw -pthread -o nave
+
+    !!IMPORTANTE!!
+    el tamaño de la fuente en la terminal la tengo en 14, muy probablemente deban usar este tamaño 
+    para que la interfaz se vea correctamente!
 */
 
 #include <ncurses.h>
@@ -9,6 +14,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define corIniX 21 // coordenada x inicial de la nave 
 #define corIniY 4 // coordenada y inicial de la nave
@@ -20,68 +26,149 @@
 #define filas 11
 
 /*-----VARIABLES INICIALIZADAS-----*/
-time_t ultimoMov;
 char *nave, *modo;
-int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY;
+int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c;
 
 /*SIN LÓGICA APLICADA*/
 int combustible, oxigeno, naves, mutexio, semaforita, kernelio;
 bool modoDisparo;
-/********************/
-/*-----VARIABLES INICIALIZADAS-----*/
+/*********************/
+/*---------------------------------*/
 
-/*HILO DE INTERFAZ*/
-void *dibujarPantalla(void *arg){
-        attron(COLOR_PAIR(1));
-        for (int i = 0; i <= filas; i++) {
-            for (int j = 0; j <= columnas * celAnch; j++) {
-                mvaddch(inicioY + i * celAlt, inicioX + j, '-');
+/*FUNCIÓN PARA DIBUJAR LA INTERFAZ*/
+void dibujarPantalla(){
+    erase();
+    attron(COLOR_PAIR(1));
+    for (int i = 0; i <= filas; i++) {
+        for (int j = 0; j <= columnas * celAnch; j++) {
+            mvaddch(inicioY + i * celAlt, inicioX + j, '-');
+        }
+    }
+
+    for (int i = 0; i <= filas * celAlt; i++) {
+        for (int j = 0; j <= columnas; j++) {
+            mvaddch(inicioY + i, inicioX + j * celAnch, '|');
+        }
+    }
+
+    for (int i = 0; i <= filas; i++) {
+        for (int j = 0; j <= columnas; j++) {
+            mvaddch(inicioY + i * celAlt, inicioX + j * celAnch, '+');
+        }
+    }
+    attroff(COLOR_PAIR(1)); 
+
+    attron(COLOR_PAIR(2));
+    mvprintw(0, 49, ">>>>>>-COSMIKERNEL->>>>>>");
+    mvprintw(26, 21, "MODO:%s", modo);
+    mvprintw(2, 21, "COMB:%d%%", combustible);
+    mvprintw(2, 57, "OXÍG:%d%%", oxigeno);
+    mvprintw(2, 93, "NAVES:%d/5", naves);
+    mvprintw(26, 95, "KERN:%d", kernelio);
+    mvprintw(26, 83, "SEMA:%d", semaforita);
+    mvprintw(26, 71, "MUTE:%d", mutexio);
+    attroff(COLOR_PAIR(2));
+    refresh();
+}
+
+/*HILO DE MOVIMIENTO*/
+void *movimientoNave(void *arg){
+
+    while(1){
+        c = getch();
+        if(!modoDisparo){
+
+            /*MODO NAVE*/
+            switch(c) {
+                
+                case 'w': y=y-celAlt;
+                nave= "↑";
+                if(y<corIniY){
+                    y=maxCorY;
+                }
+                break;
+            
+                case 's': y=y+celAlt; 
+                nave= "↓";
+                if(y>maxCorY){
+                    y=corIniY;
+                }
+                break;
+                    
+                case 'a': x=x-celAnch; 
+                nave= "←";
+                if(x<corIniX){
+                    x=maxCorX;
+                }
+                break;
+                    
+                case 'd': x=x+celAnch; 
+                nave= "→";
+                if(x>maxCorX){
+                    x=corIniX;
+                }
+                break;
             }
         }
 
-        for (int i = 0; i <= filas * celAlt; i++) {
-            for (int j = 0; j <= columnas; j++) {
-                mvaddch(inicioY + i, inicioX + j * celAnch, '|');
+        /*MODO DISPARO (SIN LÓGICA APLICADA)*/
+        switch(c){
+
+            case 'w':
+            nave= "↑";
+            break;
+                
+            case 's': 
+            nave= "↓";
+            break;
+                
+            case 'a':
+            nave= "←";
+            break;
+                
+            case 'd':
+            nave= "→";
+            break;
+
+            case 'e':
+            modoDisparo = !modoDisparo;
+                
+            if(modoDisparo){
+                modo= "DISP";
+            }else{
+                modo= "NAVE";
             }
+            break;
         }
 
-        for (int i = 0; i <= filas; i++) {
-            for (int j = 0; j <= columnas; j++) {
-                mvaddch(inicioY + i * celAlt, inicioX + j * celAnch, '+');
-            }
+        switch(c){ // salir del juego de forma inmediata
+            case 'p': 
+            endwin();
+            exit(0);
+            break;
         }
-        attroff(COLOR_PAIR(1)); 
-
+        dibujarPantalla(); // CADA VEZ QUE SE MUEVA LA NAVE SE DIBUJARÁ LA INTERFAZ
         attron(COLOR_PAIR(2));
-        mvprintw(0, 49, ">>>>>>-COSMIKERNEL->>>>>>");
         mvaddstr(y, x, nave);
-        mvprintw(26, 21, "MODO:%s", modo);
-        mvprintw(2, 21, "COMB:%d%%", combustible);
-        mvprintw(2, 57, "OXÍG:%d%%", oxigeno);
-        mvprintw(2, 93, "NAVES:%d/5", naves);
-        mvprintw(26, 95, "KERN:%d", kernelio);
-        mvprintw(26, 83, "SEMA:%d", semaforita);
-        mvprintw(26, 71, "MUTE:%d", mutexio);
         attroff(COLOR_PAIR(2));
-        pthread_exit(NULL);
+    }
 }
 
 int main() {
     setlocale(LC_ALL, "");
     initscr();
     noecho();
-    curs_set(0); 
-    nodelay(stdscr, TRUE);
+    curs_set(0);
+    //nodelay(stdscr, TRUE); // SI LO QUITO REDUCE PARPADEOS Y USA MENOS CPU
 
-    pthread_t hilo_pantalla;
-    int resultado;
+    pthread_t hilo_mov;
+    int resHilo;
 
     start_color();
     init_color(8, 200, 200, 200); // gris
     init_pair(1, 8, COLOR_BLACK);
     init_pair(2, COLOR_GREEN, COLOR_BLACK);
-    
-    ultimoMov = 0;
+
     nave = "↓";
     modo = "NAVE";
     x = corIniX;
@@ -106,95 +193,24 @@ int main() {
     inicioX = (maxX - ancho) / 2;
     inicioY = (maxY - alto) / 2;
 
-    refresh();
+    /* 
+        al quitar nodelay(), getch() queda esperando alguna tecla y luego se 
+        dibuja la pantalla, entonces dibujo la pantalla por lo menos una vez
+        para evitar la pantalla en negro
+    */
+    dibujarPantalla();
+    attron(COLOR_PAIR(2));
+    mvaddstr(y, x, nave);
+    attroff(COLOR_PAIR(2));
+    /*----------------------------------------------------------------------*/
 
-    while (1) {
-        erase();
-
-        time_t relojAhora = time(NULL);
-
-        resultado = pthread_create(&hilo_pantalla, NULL, dibujarPantalla, NULL);
-
-        if(resultado!=0){
-            perror("Error al crear el hilo");
-            exit(1);
-        }
-
-        pthread_join(hilo_pantalla, NULL);
-
-        refresh();
-        int c = getch();
-
-        //if(c!=ERR && relojAhora-ultimoMov>=1){ /*COOLDOWN (TODAVÍA NO SE DECIDE SI AGREGARLO)*/
-            
-        if(!modoDisparo){
-
-            /*MODO NAVE*/
-            switch(c) {
-                
-            case 'w': y=y-celAlt;
-            nave= "↑";
-            if(y<corIniY){
-                y=maxCorY;
-            }
-            break;
-            
-            case 's': y=y+celAlt; 
-            nave= "↓";
-            if(y>maxCorY){
-                y=corIniY;
-            }
-            break;
-            
-            case 'a': x=x-celAnch; 
-            nave= "←";
-            if(x<corIniX){
-                x=maxCorX;
-            }
-            break;
-            
-            case 'd': x=x+celAnch; 
-            nave= "→";
-            if(x>maxCorX){
-                x=corIniX;
-            }
-            break;
-            }
-        }
-
-        /*MODO DISPARO (SIN LÓGICA APLICADA)*/
-        switch(c){
-
-            case 'w':
-            nave= "↑";
-            break;
-            
-            case 's': 
-            nave= "↓";
-            break;
-            
-            case 'a':
-            nave= "←";
-            break;
-            
-            case 'd':
-            nave= "→";
-            break;
-
-            case 'e':
-            modoDisparo = !modoDisparo;
-            
-            if(modoDisparo){
-                modo= "DISP";
-            }else{
-                modo= "NAVE";
-            }
-            break;
-        }
-
-        //ultimoMov=relojAhora; /*COOLDOWN (TODAVÍA NO SE DECIDE SI AGREGARLO)*/
-        //} /*COOLDOWN (TODAVÍA NO SE DECIDE SI AGREGARLO)*/
+    resHilo = pthread_create(&hilo_mov, NULL, movimientoNave, NULL);
+    if(resHilo!=0){
+        perror("¡Error al crear el hilo 'hilo_mov'!");
+        exit(1);
     }
+
+    pthread_join(hilo_mov, NULL);
     
     endwin();
     return 0;
