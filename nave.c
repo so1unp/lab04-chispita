@@ -27,7 +27,7 @@
 
 /*-----VARIABLES INICIALIZADAS-----*/
 char *nave, *modo;
-int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, ini;
+int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, ini, misil;
 clock_t ult;
 
 /*SIN LÓGICA APLICADA*/
@@ -68,15 +68,37 @@ void dibujarPantalla(){
     mvprintw(26, 95, "KERN:%d", kernelio);
     mvprintw(26, 83, "SEMA:%d", semaforita);
     mvprintw(26, 71, "MUTE:%d", mutexio);
+
+    if(modoDisparo){
+        mvprintw(26, 34, "MISIL:%d", misil);
+    }else{
+
+    }
+
     attroff(COLOR_PAIR(2));
     refresh();
 }
 
 /*HILO DE MOVIMIENTO*/
 void *movimientoNave(void *arg){
-
     while(1){
         c = getch();
+
+        /*SWITCH PARA EL MODO DISPARO*/
+        switch(c){
+            case 'e':
+            modoDisparo = !modoDisparo;
+                
+            if(modoDisparo){ // cambio el texto de 'modo' y dibujo
+                modo= "DISP";
+                dibujarPantalla(); 
+            }else{
+                modo= "NAVE";
+                dibujarPantalla();
+            }
+            break;
+        }
+
         if(!modoDisparo){
             if(c!=ERR){
                 clock_t ahora = clock();
@@ -120,36 +142,37 @@ void *movimientoNave(void *arg){
             }
         }
 
-        /*MODO DISPARO (SIN LÓGICA APLICADA)*/
-        switch(c){
+        /*MODO DISPARO*/
+        if(modoDisparo){
+            if(c!=ERR){
+                clock_t ahora = clock();
+                if((ahora-ult)>=CLOCKS_PER_SEC){
+                    switch(c){
 
-            case 'w':
-            nave= "↑";
-            break;
-                
-            case 's': 
-            nave= "↓";
-            break;
-                
-            case 'a':
-            nave= "←";
-            break;
-                
-            case 'd':
-            nave= "→";
-            break;
-
-            case 'e':
-            modoDisparo = !modoDisparo;
-                
-            if(modoDisparo){ // cambio el texto de 'modo' y dibujo
-                modo= "DISP";
-                dibujarPantalla(); 
-            }else{
-                modo= "NAVE";
-                dibujarPantalla();
+                        case 'w': misil--;
+                        nave= "↑!";
+                        break;
+                            
+                        case 's': misil--;
+                        nave= "↓!";
+                        break;
+                            
+                        case 'a': misil--;
+                        nave= "←!";
+                        break;
+                            
+                        case 'd': misil--;
+                        nave= "→!";
+                        break;
+                    }
+                    ult=ahora;
+                    ini=1;
+                    if(misil<0){
+                        misil=0;
+                    }
+                    dibujarPantalla(); // DIBUJO LA INTERFAZ CADA VEZ QUE DISPARE
+                }
             }
-            break;
         }
 
         switch(c){ // salir del juego de forma inmediata
@@ -158,7 +181,6 @@ void *movimientoNave(void *arg){
             exit(0);
             break;
         }
-
         attron(COLOR_PAIR(2));
         mvaddstr(y, x, nave);
         attroff(COLOR_PAIR(2));
@@ -196,6 +218,7 @@ int main() {
     semaforita = 0;
     kernelio = 0;
     modoDisparo = false;
+    misil = 3;
     /********************/
 
     celAlt = 2; // altura de cada celda
@@ -219,6 +242,7 @@ int main() {
     /*----------------------------------------------------------------------*/
 
     resHilo = pthread_create(&hilo_mov, NULL, movimientoNave, NULL);
+   
     if(resHilo!=0){
         perror("¡Error al crear el hilo 'hilo_mov'!");
         exit(1);
