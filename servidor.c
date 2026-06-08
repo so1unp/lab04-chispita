@@ -4,27 +4,21 @@
 #include <ncurses.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/mman.h>   // Para memoria compartida
+#include <fcntl.h>      // Para constantes O_CREAT, O_RDWR
+#include "compartido.h"
 
-#define FILAS 40
-#define COLUMNAS 100
-
-#define MAX_ASTEROIDES_FISICOS 50 
-
-typedef struct {
-    int x;
-    int y;
-    int deuterio;
-    int mutexio;
-    int semaforita;
-    int kernelio;
-    int activo; 
-} Asteroide;
-
-typedef struct {
-    int x;
-    int y;
-    int combustible;
-} Estacion;
+/**
+ * Cambios en el servidor, los dejo anotado aca:
+ * - Cree un archivo llamado compartido.h que ahi van lo que vendrian siendo el asteroide, las estaciones, el mapa espacial
+ * y las constantes de filas, columnas y maximo de asteroides fisicos.
+ * 
+ * - Con el tema punteros: agregue punteros en el ultimo while y tambien en la linea 132 para abajo
+ * 
+ * - Por la linea 116 y 127 quise implementar esto de la memoria compartida: se corrigio en el main la logica para que el
+ * servidor cree la memoria antes de levantar la UI. Tambien se implemento las herramientas POSIX smh_open, ftruncate y mmap
+ *  para crear y mapear la memoria compartida. Se corrigio el acceso a la memoria compartida usando punteros.  
+ * */
 
 typedef struct {
     int estaciones;
@@ -37,20 +31,6 @@ typedef struct {
     int precio_oxigeno;
 } ConfiguracionJuego;
 
-typedef struct {
-    char matriz[FILAS][COLUMNAS];
-    int juego_activo;
-
-    Asteroide asteroides[MAX_ASTEROIDES_FISICOS];
-    Estacion estaciones[3];
-
-    int precio_deuterio;
-    int precio_mutexio;
-    int precio_semaforita;
-    int precio_kernelio;
-    int precio_combustible;
-    int precio_oxigeno;
-} MapaEspacial;
 
 void cargar_configuracion(const char *nombre_archivo, ConfiguracionJuego *config) {
     FILE *archivo = fopen(nombre_archivo, "r");
@@ -133,20 +113,32 @@ int main(int argc, char *argv[]) {
     ConfiguracionJuego config;
     cargar_configuracion(argv[1], &config);
 
-    MapaEspacial mapa_servidor;
+    int shh_fd = shm_open("/mapa_espacial", O_CREAT | O_RDWR, 0666);
+    if (shh_fd == -1) {
+        perror("Error al crear la memoria compartida");
+        exit(EXIT_FAILURE);
+    }
+
+    ftruncate(shh_fd, sizeof(MapaEspacial));
+
+    MapaEspacial *mapa_servidor = mmap(NULL, sizeof(MapaEspacial), PROT_READ | PROT_WRITE, MAP_SHARED, shh_fd, 0);
+    if (mapa_servidor == MAP_FAILED) {
+        perror("Error al mapear la memoria compartida");
+        exit(EXIT_FAILURE);
+    }
+
     srand(time(NULL));
-    inicializar_mapa(&mapa_servidor);
+    inicializar_mapa(mapa_servidor);
+    generar_asteroides(mapa_servidor, config.asteroides);
     
-    generar_asteroides(&mapa_servidor, config.asteroides);
+    mapa_servidor->precio_deuterio = config.precio_deuterio;
+    mapa_servidor->precio_mutexio = config.precio_mutexio;
+    mapa_servidor->precio_semaforita = config.precio_semaforita;
+    mapa_servidor->precio_kernelio = config.precio_kernelio;
+    mapa_servidor->precio_combustible = config.precio_combustible;
+    mapa_servidor->precio_oxigeno = config.precio_oxigeno;
     
-    mapa_servidor.precio_deuterio = config.precio_deuterio;
-    mapa_servidor.precio_mutexio = config.precio_mutexio;
-    mapa_servidor.precio_semaforita = config.precio_semaforita;
-    mapa_servidor.precio_kernelio = config.precio_kernelio;
-    mapa_servidor.precio_combustible = config.precio_combustible;
-    mapa_servidor.precio_oxigeno = config.precio_oxigeno;
-    
-    mapa_servidor.juego_activo = 1;
+    mapa_servidor->juego_activo = 1;
 
     initscr();
     noecho();
@@ -156,7 +148,7 @@ int main(int argc, char *argv[]) {
 
     for (int i = 0; i < FILAS; i++) {
         for (int j = 0; j < COLUMNAS; j++) {
-            mvaddch(i, j, mapa_servidor.matriz[i][j]);
+            mvaddch(i, j, mapa_servidor->matriz[i][j]);
         }
     }
     mvprintw(FILAS + 1, 0, "--- SERVIDOR DEL SECTOR ESPACIAL ACTIVO ---");
@@ -164,18 +156,18 @@ int main(int argc, char *argv[]) {
     mvprintw(FILAS + 3, 0, "Presione 'q' para apagar el servidor.");
     refresh(); 
 
-    while (mapa_servidor.juego_activo) {
+    while (mapa_servidor->juego_activo) {
         
         for (int i = 1; i < FILAS - 1; i++) {
             for (int j = 1; j < COLUMNAS - 1; j++) {
-                mvaddch(i, j, mapa_servidor.matriz[i][j]);
+                mvaddch(i, j, mapa_servidor->matriz[i][j]);
             }
         }
         refresh(); 
 
         int tecla = getch();
         if (tecla == 'q') {
-            mapa_servidor.juego_activo = 0;
+            mapa_servidor->juego_activo = 0;
         }
     }
 
