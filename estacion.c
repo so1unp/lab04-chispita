@@ -17,10 +17,10 @@ int main()
     int tecla; //variable para leer la tecla que se presiona
 
     //cantidad de los recursos en la estación YPF
-  int oxigeno = 20;
-  int nafta = 300;
- int contador = 0;
-
+  int oxigeno = 1000;
+  int nafta = 1000;
+ int recolector0 = 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ EL OXIGENO Y TENER EN CUENTA CUANTO MINERALES HAY 1 UNIDAD DE ESTO REPRENSENTA 3 MINERALES.
+int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TENER EN CUENTA CUANTO MINERALES HAY 1 UNIDAD DE ESTO REPRENSENTA 3 MINERALES.
 
  // hay 20 de oxigeno de stock en la ypf
  //llegan 3 naves 
@@ -35,7 +35,7 @@ int main()
     //variables que estan harcodeadas, pero que se pueden modificar para probar la logica de la ypf
     int navesEnEstacion = 3; //cantidad de naves que hay (SI ES 3 O MÁS, SE BLOQUEA Y MUESTRA EL MENSAJE)
     //Deuterio  combustible de las naves 
-    int deuterio = 10;
+    int deuterio = 30;
     //Mutexio, semaforita y kernelio: minerales con múltiples usos como generación de oxígeno,
     //preparacion de aleaciones ultra-resistentes o condimento para pizzas.
     int mutexio = 5;
@@ -75,8 +75,8 @@ int main()
         //informacion de la ypf
         mvwprintw(ventana, 13, 2,"Naves en la estacion: %d", navesEnEstacion);
         mvwprintw(ventana, 14, 2, "--------recursos de YPF--------");
-        mvwprintw(ventana, 15, 2,  "Oxigeno: %d",   oxigeno);
-        mvwprintw(ventana, 16, 2, "Nafta: %d",nafta);
+        mvwprintw(ventana, 15, 2,  "Oxigeno: EN YPF %d",   oxigeno);
+        mvwprintw(ventana, 16, 2, "Nafta: EN YPF %d",nafta);
         mvwprintw(ventana, 17, 2, "------------------------");
 
         //minerales 
@@ -111,14 +111,32 @@ int main()
             switch(tecla)
             {
                 //cambio por nafta
-                case '1':
-                    if (deuterio >= 5){
-                        deuterio -= 5;
-                        nafta += 10;
-                        mvwprintw(ventana, 20, 2,  "Trueque realizado: 5 Deuterio por 10 Nafta ");
-                    }else{
-                        mvwprintw(ventana, 20, 2, "No tenes suficiente Deuterio. "); }
-                    break;
+               case '1':
+                        if (deuterio >= 5){
+                            deuterio -= 5;
+                            nafta -= 10;
+                            recolector1++;
+
+                            if (nafta == 0 ){
+                                mvwprintw(ventana, 16, 2, "Nafta: %d  ", nafta);
+                                mvwprintw(ventana, 20, 2, " NO HAY NAFTA Reponiendo... ");
+                                wrefresh(ventana);
+                                sleep(1);
+
+
+                                if (nafta == 0 && recolector1 >=  1){
+                                    nafta =100;
+                                    recolector1-- ;
+                                }
+                            }
+
+                            mvwprintw(ventana, 16, 2, "Nafta: %d  ", nafta);
+                            mvwprintw(ventana, 20, 2, "Trueque realizado: 5 Deuterio por 10 Nafta  ");
+
+                        }else{
+                            mvwprintw(ventana, 20, 2, "No tenes suficiente Deuterio. ");
+                        }
+                        break;
 
                 //cambio por oxigeno 
                 case '2':
@@ -126,24 +144,26 @@ int main()
                         mutexio--;
                         semaforita--;
                         kernelio--;
-                        contador+=3;
+                        recolector0+=3;
                         oxigeno -=10;
 
-                        if(oxigeno==0){
-                            oxigeno=0;
-                            mvwprintw(ventana, 15, 2,  "Oxigeno: %d",   oxigeno);
-                            sleep(1);
+                        if(oxigeno==0 && recolector0 >= 3){
+                         mvwprintw(ventana, 15, 2, "Oxigeno: %d   ", oxigeno); 
+                           mvwprintw(ventana, 20, 2, " NO HAY OXIGENO Reponiendo... ");
+                             wrefresh(ventana);  
+                             sleep(2);          
                         }
 
-                     if ( oxigeno == 0 && contador >= 3) {
-                            oxigeno+=40;
-                            contador-=3;
+                     if ( oxigeno == 0 ) {
+                            oxigeno=40;
+                            recolector0-=3;
                         }
-                         
+                                                                         
 
                         mvwprintw(ventana, 20, 2,"Trueque realizado: minerales por 10 Oxigeno.  ");
                     }else{
-                        mvwprintw(ventana, 20, 2,  "No tienes suficientes minerales.");}
+                        mvwprintw(ventana, 20, 2,  "No tienes suficientes minerales.");
+                    }
                     break;
 
                 case 'q':
