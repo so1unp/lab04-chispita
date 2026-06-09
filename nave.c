@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 #define corIniX 21 // coordenada x inicial de la nave 
 #define corIniY 4 // coordenada y inicial de la nave
@@ -25,10 +26,13 @@
 #define columnas 21
 #define filas 11
 
+#define velocidad 500000 // velocidad/cooldown del movimiento de la nave
+
 /*-----VARIABLES INICIALIZADAS-----*/
 char *nave, *modo;
 int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, ini, misil;
 clock_t ult;
+pthread_mutex_t mutex;
 
 /*SIN LÓGICA APLICADA*/
 int combustible, oxigeno, naves, mutexio, semaforita, kernelio;
@@ -36,8 +40,10 @@ bool modoDisparo;
 /*********************/
 /*---------------------------------*/
 
+void *banner(void *param);
+
 /*FUNCIÓN PARA DIBUJAR LA INTERFAZ*/
-void dibujarPantalla(){
+void dibujarPantalla(){   
     erase();
     attron(COLOR_PAIR(1));
     for (int i = 0; i <= filas; i++) {
@@ -60,7 +66,6 @@ void dibujarPantalla(){
     attroff(COLOR_PAIR(1)); 
 
     attron(COLOR_PAIR(2));
-    mvprintw(0, 49, ">>>>>>-COSMIKERNEL->>>>>>");
     mvprintw(26, 21, "MODO:%s", modo);
     mvprintw(2, 21, "COMB:%d%%", combustible);
     mvprintw(2, 57, "OXÍG:%d%%", oxigeno);
@@ -74,7 +79,6 @@ void dibujarPantalla(){
     }else{
 
     }
-
     attroff(COLOR_PAIR(2));
     refresh();
 }
@@ -82,6 +86,9 @@ void dibujarPantalla(){
 /*HILO DE MOVIMIENTO*/
 void *movimientoNave(void *arg){
     while(1){
+
+        pthread_mutex_lock(&mutex);
+
         c = getch();
 
         /*SWITCH PARA EL MODO DISPARO*/
@@ -102,7 +109,7 @@ void *movimientoNave(void *arg){
         if(!modoDisparo){
             if(c!=ERR){
                 clock_t ahora = clock();
-                if(!ini || (ahora-ult)>=CLOCKS_PER_SEC){
+                if(!ini || (ahora-ult)>=velocidad){
                     
                     /*MODO NAVE*/
                     switch(c) {
@@ -146,7 +153,7 @@ void *movimientoNave(void *arg){
         if(modoDisparo){
             if(c!=ERR){
                 clock_t ahora = clock();
-                if((ahora-ult)>=CLOCKS_PER_SEC){
+                if((ahora-ult)>=velocidad){
                     switch(c){
 
                         case 'w': misil--;
@@ -184,7 +191,11 @@ void *movimientoNave(void *arg){
         attron(COLOR_PAIR(2));
         mvaddstr(y, x, nave);
         attroff(COLOR_PAIR(2));
+
+        pthread_mutex_unlock(&mutex);
+        
     }
+
 }
 
 int main() {
@@ -194,8 +205,10 @@ int main() {
     curs_set(0);
     nodelay(stdscr, TRUE); // SI LO QUITO REDUCE PARPADEOS Y USA MENOS CPU
 
-    pthread_t hilo_mov;
-    int resHilo;
+    pthread_t hilo_mov, hilo_banner;
+    
+    pthread_mutex_init(&mutex, NULL);
+    int resHilo, resHilo2;
 
     ini = 0;
     ult = 0;
@@ -242,14 +255,49 @@ int main() {
     /*----------------------------------------------------------------------*/
 
     resHilo = pthread_create(&hilo_mov, NULL, movimientoNave, NULL);
+    pthread_create(&hilo_banner,NULL,(void *)banner,NULL);
    
     if(resHilo!=0){
         perror("¡Error al crear el hilo 'hilo_mov'!");
         exit(1);
     }
 
+    if(resHilo2!=0){
+        perror("¡Error al crear el hilo 'hilo_banner'!");
+        exit(1);
+    }
+
     pthread_join(hilo_mov, NULL);
+    pthread_join(hilo_banner, NULL);
     
     endwin();
     return 0;
 }   
+
+void *banner(void *param) {  
+    
+    char titulo[] = ">>>>>>COSMIKERNEL>>>>>>";
+    int longitud = strlen(titulo);
+    char buffer[100];
+    int i = 0;
+
+    while(1){
+        memset(buffer, 0, sizeof(buffer)); 
+        for(int j=0; j<longitud; j++){
+            buffer[j] = titulo[(i+j) % longitud];
+        }
+
+        pthread_mutex_lock(&mutex);
+
+        attron(COLOR_PAIR(2));
+        mvprintw(0, 49, "%s", buffer);
+        attroff(COLOR_PAIR(2)); 
+
+        pthread_mutex_unlock(&mutex);
+        
+        i = (i + 1) % longitud; 
+        usleep(200000); 
+    }  
+    
+    pthread_exit(0);   
+}
