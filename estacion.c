@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ncurses.h>
+#include <unistd.h>
 //reglas que pensamos entre los integrantes del grupo para el trueque de recursos en la estacion espacial YPF
 //1. Cada nave puede realizar un trueque de recursos en la estación YPF una vez que llegue a la estación.
 //2. El trueque se realiza en función de la cantidad de recursos que la nave tiene y la cantidad de recursos disponibles en la estación YPF.
@@ -11,26 +12,39 @@
 int main()
 {
     WINDOW *ventana; //ventana de la YPF
-
+  //semaforos 
     int MAXnaves = 3; //cantidad maxima de naves que puede recibir
     int tecla; //variable para leer la tecla que se presiona
 
     //cantidad de los recursos en la estación YPF
-    int oxigeno = 300;
-    int nafta = 300;
+  int oxigeno = 20;
+  int nafta = 300;
+ int contador = 0;
 
+
+ // hay 20 de oxigeno de stock en la ypf
+ //llegan 3 naves 
+ // la primera se lleva 10 ENTRGAN 1
+ // la segunda se lleva 10 ENTRGAN 1 
+ // la tercera se lleva 0
+ // no puede entrar porque no hay stock
+//MINERALES QUE VA A TENER LA YPF 2 LA YPF 3+3=6 --> 1
+// NOSOTROMOS PARA FABRICAR LOS RECURSOS  NECESITAMOS 1 TOTAL PARA GENERAL 20 DE OXIGENO 
 
     //IMPORTANTEEEEEE
     //variables que estan harcodeadas, pero que se pueden modificar para probar la logica de la ypf
-    int navesEnEstacion = 4; //cantidad de naves que hay (SI ES 3 O MÁS, SE BLOQUEA Y MUESTRA EL MENSAJE)
+    int navesEnEstacion = 3; //cantidad de naves que hay (SI ES 3 O MÁS, SE BLOQUEA Y MUESTRA EL MENSAJE)
     //Deuterio  combustible de las naves 
     int deuterio = 10;
     //Mutexio, semaforita y kernelio: minerales con múltiples usos como generación de oxígeno,
     //preparacion de aleaciones ultra-resistentes o condimento para pizzas.
     int mutexio = 5;
-    int semaforita = 3;
-    int kernelio = 2;
-
+    int semaforita = 5;
+    int kernelio = 5;
+    //paso de mensajes 
+// hilo que escuche por mensajes para intercambio de minerales y devuelvo otro mensakes
+//suma y resta de recursos no es memoria compartida 
+//mas dificil pero s eouede hacer con memoria comoartida donde las naves van a escribir baja un mutex toma el combustible e incrementa y suleta la memoria 
     initscr();
     noecho();
     cbreak();
@@ -85,8 +99,11 @@ int main()
             mvwprintw(ventana, 23, 2, "[q] Salir");
         }
 
+    
+
         wrefresh(ventana);
 
+        
         tecla = wgetch(ventana);
 
       //trueque
@@ -109,7 +126,21 @@ int main()
                         mutexio--;
                         semaforita--;
                         kernelio--;
-                        oxigeno += 10;
+                        contador+=3;
+                        oxigeno -=10;
+
+                        if(oxigeno==0){
+                            oxigeno=0;
+                            mvwprintw(ventana, 15, 2,  "Oxigeno: %d",   oxigeno);
+                            sleep(1);
+                        }
+
+                     if ( oxigeno == 0 && contador >= 3) {
+                            oxigeno+=40;
+                            contador-=3;
+                        }
+                         
+
                         mvwprintw(ventana, 20, 2,"Trueque realizado: minerales por 10 Oxigeno.  ");
                     }else{
                         mvwprintw(ventana, 20, 2,  "No tienes suficientes minerales.");}
