@@ -6,7 +6,7 @@
     !!IMPORTANTE!!
     para que la interfaz se vea de forma correcta usar la fuente en tamaño 14 y la terminal 
     maximizada (no pantalla completa)
-*/
+*/ 
 
 #include <ncurses.h>
 #include <time.h>
