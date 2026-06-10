@@ -4,8 +4,8 @@
     gcc nave.c -lncursesw -pthread -o nave
 
     !!IMPORTANTE!!
-    el tamaño de la fuente en la terminal la tengo en 14, muy probablemente deban usar este tamaño 
-    para que la interfaz se vea correctamente!
+    para que la interfaz se vea de forma correcta usar la fuente en tamaño 14 y la terminal 
+    maximizada (no pantalla completa)
 */
 
 #include <ncurses.h>
@@ -26,13 +26,14 @@
 #define columnas 21
 #define filas 11
 
-#define velocidad 500000 // velocidad/cooldown del movimiento de la nave
+#define velocidad 900000 // velocidad/cooldown del movimiento de la nave
 
 /*-----VARIABLES INICIALIZADAS-----*/
 char *nave, *modo;
 int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, ini, misil;
 clock_t ult;
 pthread_mutex_t mutex;
+int volatile dibujar;
 
 /*SIN LÓGICA APLICADA*/
 int combustible, oxigeno, naves, mutexio, semaforita, kernelio;
@@ -41,54 +42,143 @@ bool modoDisparo;
 /*---------------------------------*/
 
 void *banner(void *param);
+void *dibujarPantalla(void *param);
+void *movimientoNave(void *arg);
 
-/*FUNCIÓN PARA DIBUJAR LA INTERFAZ*/
-void dibujarPantalla(){   
-    erase();
-    attron(COLOR_PAIR(1));
-    for (int i = 0; i <= filas; i++) {
-        for (int j = 0; j <= columnas * celAnch; j++) {
-            mvaddch(inicioY + i * celAlt, inicioX + j, '-');
+int main() {
+    setlocale(LC_ALL, "");
+    initscr();
+    noecho();
+    curs_set(0);
+    nodelay(stdscr, TRUE); // SE DEBE USAR SI O SI, POR AHORA
+
+    pthread_t hilo_mov, hilo_banner, hilo_pantalla; // declaración de hilos
+    pthread_mutex_init(&mutex, NULL); // declaración de mutex
+    
+    /*COLORES*/
+    start_color();
+    init_color(8, 200, 200, 200); // gris
+    init_pair(1, 8, COLOR_BLACK);
+    init_pair(2, COLOR_GREEN, COLOR_BLACK);
+    
+    ini = 0;
+    ult = 0;
+    nave = "↓";
+    modo = "NAVE";
+    x = corIniX;
+    y = corIniY;
+    celAlt = 2; // altura de cada celda
+    celAnch = 4; // ancho de cada celda
+    getmaxyx(stdscr, maxY, maxX);
+    ancho = columnas * celAnch + 1;
+    alto  = filas * celAlt + 1;
+    inicioX = (maxX - ancho) / 2;
+    inicioY = (maxY - alto) / 2;
+    dibujar=1;
+
+    /*SIN LÓGICA APLICADA*/
+    combustible = 100;
+    oxigeno = 100;
+    naves = 1;
+    mutexio = 0;
+    semaforita = 0;
+    kernelio = 0;
+    modoDisparo = false;
+    misil = 3;
+    /********************/
+
+    /*DISPARADOR DE HILOS*/
+    pthread_create(&hilo_mov, NULL, movimientoNave, NULL);
+    pthread_create(&hilo_banner,NULL,(void *)banner, NULL);
+    pthread_create(&hilo_pantalla,NULL,(void *)dibujarPantalla, NULL);
+
+    pthread_join(hilo_mov, NULL);
+    pthread_join(hilo_banner, NULL);
+    pthread_join(hilo_pantalla, NULL);
+    
+    endwin();
+    return 0;
+}   
+
+/*HILO PARA ANIMACIÓN DEL BANNER*/
+void *banner(void *param) {  
+    
+    char titulo[] = ">>>>>>COSMIKERNEL>>>>>>";
+    int longitud = strlen(titulo);
+    char buffer[100];
+    int i = 0;
+
+    while(1){
+        memset(buffer, 0, sizeof(buffer)); 
+        for(int j=0; j<longitud; j++){
+            buffer[j] = titulo[(i+j) % longitud];
         }
-    }
 
-    for (int i = 0; i <= filas * celAlt; i++) {
-        for (int j = 0; j <= columnas; j++) {
-            mvaddch(inicioY + i, inicioX + j * celAnch, '|');
+        pthread_mutex_lock(&mutex);
+        attron(COLOR_PAIR(2));
+        mvprintw(0, 49, "%s", buffer);
+        attroff(COLOR_PAIR(2)); 
+        pthread_mutex_unlock(&mutex);
+        
+        i = (i + 1) % longitud; 
+        usleep(200000); 
+    }  
+    
+    pthread_exit(0);   
+}
+
+/*HILO PARA DIBUJAR LA INTERFAZ*/
+void *dibujarPantalla(void *arg){   
+    while(1){
+        pthread_mutex_lock(&mutex);
+        if(dibujar==1){
+            erase();
+            attron(COLOR_PAIR(1));
+            for (int i = 0; i <= filas; i++) {
+                for (int j = 0; j <= columnas * celAnch; j++) {
+                    mvaddch(inicioY + i * celAlt, inicioX + j, '-');
+                }
+            }
+
+            for (int i = 0; i <= filas * celAlt; i++) {
+                for (int j = 0; j <= columnas; j++) {
+                    mvaddch(inicioY + i, inicioX + j * celAnch, '|');
+                }
+            }
+
+            for (int i = 0; i <= filas; i++) {
+                for (int j = 0; j <= columnas; j++) {
+                    mvaddch(inicioY + i * celAlt, inicioX + j * celAnch, '+');
+                }
+            }
+            attroff(COLOR_PAIR(1)); 
+
+            attron(COLOR_PAIR(2));
+            mvprintw(26, 21, "MODO:%s", modo);
+            mvprintw(2, 21, "COMB:%d%%", combustible);
+            mvprintw(2, 57, "OXÍG:%d%%", oxigeno);
+            mvprintw(2, 93, "NAVES:%d/5", naves);
+            mvprintw(26, 95, "KERN:%d", kernelio);
+            mvprintw(26, 83, "SEMA:%d", semaforita);
+            mvprintw(26, 71, "MUTE:%d", mutexio);
+
+            if(modoDisparo){
+                mvprintw(26, 34, "MISIL:%d", misil);
+            }else{
+
+            }
+            attroff(COLOR_PAIR(2));
+            refresh();
+            dibujar = 0;
         }
+        pthread_mutex_unlock(&mutex);
     }
-
-    for (int i = 0; i <= filas; i++) {
-        for (int j = 0; j <= columnas; j++) {
-            mvaddch(inicioY + i * celAlt, inicioX + j * celAnch, '+');
-        }
-    }
-    attroff(COLOR_PAIR(1)); 
-
-    attron(COLOR_PAIR(2));
-    mvprintw(26, 21, "MODO:%s", modo);
-    mvprintw(2, 21, "COMB:%d%%", combustible);
-    mvprintw(2, 57, "OXÍG:%d%%", oxigeno);
-    mvprintw(2, 93, "NAVES:%d/5", naves);
-    mvprintw(26, 95, "KERN:%d", kernelio);
-    mvprintw(26, 83, "SEMA:%d", semaforita);
-    mvprintw(26, 71, "MUTE:%d", mutexio);
-
-    if(modoDisparo){
-        mvprintw(26, 34, "MISIL:%d", misil);
-    }else{
-
-    }
-    attroff(COLOR_PAIR(2));
-    refresh();
 }
 
 /*HILO DE MOVIMIENTO*/
 void *movimientoNave(void *arg){
     while(1){
-
         pthread_mutex_lock(&mutex);
-
         c = getch();
 
         /*SWITCH PARA EL MODO DISPARO*/
@@ -98,10 +188,10 @@ void *movimientoNave(void *arg){
                 
             if(modoDisparo){ // cambio el texto de 'modo' y dibujo
                 modo= "DISP";
-                dibujarPantalla(); 
+                dibujar=1;
             }else{
                 modo= "NAVE";
-                dibujarPantalla();
+                dibujar=1;
             }
             break;
         }
@@ -144,7 +234,7 @@ void *movimientoNave(void *arg){
                     }
                     ult=ahora;
                     ini=1;
-                    dibujarPantalla(); // DIBUJO LA INTERFAZ CADA VEZ QUE MUEVA LA NAVE (REDUCE CARGA DE CPU)
+                    dibujar=1;
                 }
             }
         }
@@ -177,7 +267,7 @@ void *movimientoNave(void *arg){
                     if(misil<0){
                         misil=0;
                     }
-                    dibujarPantalla(); // DIBUJO LA INTERFAZ CADA VEZ QUE DISPARE
+                    dibujar=1;
                 }
             }
         }
@@ -191,113 +281,7 @@ void *movimientoNave(void *arg){
         attron(COLOR_PAIR(2));
         mvaddstr(y, x, nave);
         attroff(COLOR_PAIR(2));
-
         pthread_mutex_unlock(&mutex);
-        
     }
 
-}
-
-int main() {
-    setlocale(LC_ALL, "");
-    initscr();
-    noecho();
-    curs_set(0);
-    nodelay(stdscr, TRUE); // SI LO QUITO REDUCE PARPADEOS Y USA MENOS CPU
-
-    pthread_t hilo_mov, hilo_banner;
-    
-    pthread_mutex_init(&mutex, NULL);
-    int resHilo, resHilo2;
-
-    ini = 0;
-    ult = 0;
-
-    start_color();
-    init_color(8, 200, 200, 200); // gris
-    init_pair(1, 8, COLOR_BLACK);
-    init_pair(2, COLOR_GREEN, COLOR_BLACK);
-
-    nave = "↓";
-    modo = "NAVE";
-    x = corIniX;
-    y = corIniY;
-
-    /*SIN LÓGICA APLICADA*/
-    combustible = 100;
-    oxigeno = 100;
-    naves = 1;
-    mutexio = 0;
-    semaforita = 0;
-    kernelio = 0;
-    modoDisparo = false;
-    misil = 3;
-    /********************/
-
-    celAlt = 2; // altura de cada celda
-    celAnch = 4; // ancho de cada celda
-
-    getmaxyx(stdscr, maxY, maxX);
-    ancho = columnas * celAnch + 1;
-    alto  = filas * celAlt + 1;
-    inicioX = (maxX - ancho) / 2;
-    inicioY = (maxY - alto) / 2;
-
-    /* 
-        al quitar nodelay(), getch() queda esperando alguna tecla y luego se 
-        dibuja la pantalla, entonces dibujo la pantalla por lo menos una vez
-        para evitar la pantalla en negro
-    */
-    dibujarPantalla();
-    attron(COLOR_PAIR(2));
-    mvaddstr(y, x, nave);
-    attroff(COLOR_PAIR(2));
-    /*----------------------------------------------------------------------*/
-
-    resHilo = pthread_create(&hilo_mov, NULL, movimientoNave, NULL);
-    pthread_create(&hilo_banner,NULL,(void *)banner,NULL);
-   
-    if(resHilo!=0){
-        perror("¡Error al crear el hilo 'hilo_mov'!");
-        exit(1);
-    }
-
-    if(resHilo2!=0){
-        perror("¡Error al crear el hilo 'hilo_banner'!");
-        exit(1);
-    }
-
-    pthread_join(hilo_mov, NULL);
-    pthread_join(hilo_banner, NULL);
-    
-    endwin();
-    return 0;
-}   
-
-void *banner(void *param) {  
-    
-    char titulo[] = ">>>>>>COSMIKERNEL>>>>>>";
-    int longitud = strlen(titulo);
-    char buffer[100];
-    int i = 0;
-
-    while(1){
-        memset(buffer, 0, sizeof(buffer)); 
-        for(int j=0; j<longitud; j++){
-            buffer[j] = titulo[(i+j) % longitud];
-        }
-
-        pthread_mutex_lock(&mutex);
-
-        attron(COLOR_PAIR(2));
-        mvprintw(0, 49, "%s", buffer);
-        attroff(COLOR_PAIR(2)); 
-
-        pthread_mutex_unlock(&mutex);
-        
-        i = (i + 1) % longitud; 
-        usleep(200000); 
-    }  
-    
-    pthread_exit(0);   
 }
