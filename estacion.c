@@ -17,11 +17,13 @@ int main()
     int tecla; //variable para leer la tecla que se presiona
 
     //cantidad de los recursos en la estación YPF
-  int oxigeno = 1000;
-  int nafta = 1000;
+  int oxigeno = 20;
+  int nafta = 20;
  int recolector0 = 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ EL OXIGENO Y TENER EN CUENTA CUANTO MINERALES HAY 1 UNIDAD DE ESTO REPRENSENTA 3 MINERALES.
 int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TENER EN CUENTA CUANTO MINERALES HAY 1 UNIDAD DE ESTO REPRENSENTA 3 MINERALES.
 
+int oxigeno_jugador = 0;
+int nafta_jugador= 0;
  // hay 20 de oxigeno de stock en la ypf
  //llegan 3 naves 
  // la primera se lleva 10 ENTRGAN 1
@@ -50,7 +52,7 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
     cbreak();
 
     //crear ventana principal
-    ventana = newwin(25, 80, 2, 5);
+    ventana = newwin(28, 85, 2, 5);
 
     keypad(ventana, TRUE);
 
@@ -80,7 +82,7 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
         mvwprintw(ventana, 17, 2, "------------------------");
 
         //minerales 
-        mvwprintw(ventana, 18, 2, "Tus minerales:");
+        mvwprintw(ventana, 17, 2, "Tus minerales:");
         mvwprintw(ventana, 18, 2, "Deuterio: %d", deuterio);
         mvwprintw(ventana, 18, 22,  "Mutexio: %d",mutexio);
         mvwprintw(ventana, 18, 42, "Semaforita: %d", semaforita);
@@ -94,6 +96,9 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
             mvwprintw(ventana, 21, 2,"[1] 5 Deuterio -> 10 Nafta");
             mvwprintw(ventana, 22, 2, "[2] 1 Mutexio + 1 Semaforita + 1 Kernelio -> 10 Oxigeno");
             mvwprintw(ventana, 23, 2,"[q] Salir");
+            mvwprintw(ventana, 24, 2, "---------Panel del juagdor----------");
+            mvwprintw(ventana, 25, 2,"oxigeno jugador: %d", oxigeno_jugador);
+            mvwprintw(ventana, 26,2,"nafta jugador: %d", nafta_jugador);
         }else{
             mvwprintw(ventana, 21, 2, "naves cargandoo. YPF esta haciendo un trueque");
             mvwprintw(ventana, 23, 2, "[q] Salir");
@@ -116,6 +121,7 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
                             deuterio -= 5;
                             nafta -= 10;
                             recolector1++;
+                            nafta_jugador += 10;
 
                             if (nafta == 0 ){
                                 mvwprintw(ventana, 16, 2, "Nafta: %d  ", nafta);
@@ -129,12 +135,10 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
                                     recolector1-- ;
                                 }
                             }
-
-                            mvwprintw(ventana, 16, 2, "Nafta: %d  ", nafta);
-                            mvwprintw(ventana, 20, 2, "Trueque realizado: 5 Deuterio por 10 Nafta  ");
-
                         }else{
-                            mvwprintw(ventana, 20, 2, "No tenes suficiente Deuterio. ");
+                               mvwprintw(ventana, 20, 2, "No tenes deuterio.");
+                               wrefresh(ventana);
+                               wgetch(ventana); 
                         }
                         break;
 
@@ -146,7 +150,7 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
                         kernelio--;
                         recolector0+=3;
                         oxigeno -=10;
-
+                        oxigeno_jugador += 10;
                         if(oxigeno==0 && recolector0 >= 3){
                          mvwprintw(ventana, 15, 2, "Oxigeno: %d   ", oxigeno); 
                            mvwprintw(ventana, 20, 2, " NO HAY OXIGENO Reponiendo... ");
@@ -158,11 +162,10 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
                             oxigeno=40;
                             recolector0-=3;
                         }
-                                                                         
-
-                        mvwprintw(ventana, 20, 2,"Trueque realizado: minerales por 10 Oxigeno.  ");
                     }else{
-                        mvwprintw(ventana, 20, 2,  "No tienes suficientes minerales.");
+                         mvwprintw(ventana, 20, 2, "no tenes minerales suficientes");
+                         wrefresh(ventana);
+                         wgetch(ventana); 
                     }
                     break;
 
@@ -178,7 +181,6 @@ int recolector1= 0; //CONTADOR PARA SABER CUANTAS VECES SE AGOTÓ LA NAFTA Y TEN
             }
         }else{
             if (tecla == 'q') {
-                mvwprintw(ventana, 20, 2,  "No hay playeros");
                 wrefresh(ventana);
                 delwin(ventana);
                 endwin();
