@@ -30,10 +30,10 @@
 #define velocidadDisp 1300 // velocidad/cooldown del disparo de la nave
 
 /*-----VARIABLES INICIALIZADAS-----*/
-char *nave, *modo, *proy;
+char *nave, *modo, *proy, buffer[100];
 int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, misil, ini, xProy, yProy, xProyIni;
 long long ult, inicioDisp;
-int volatile disparo;
+int volatile disparo, dibBanner;
 pthread_mutex_t mutex;
 
 /*SIN LÓGICA APLICADA*/
@@ -52,9 +52,7 @@ int main() {
     setlocale(LC_ALL, ""); // esto permite printear caracteres especiales, como la flecha de la nave
     initscr();
     noecho();
-    //cbreak();
     curs_set(0);
-    //nodelay(stdscr, TRUE); // NO USAR JAMÁS, CONSUME MUCHA CPU JUNTO CON getch()
 
     pthread_t hilo_mov, hilo_banner, hilo_pantalla, hilo_proyectil; // declaración de hilos
     pthread_mutex_init(&mutex, NULL); // declaración de mutex
@@ -81,11 +79,10 @@ int main() {
     alto  = filas * celAlt + 1;
     inicioX = (maxX - ancho) / 2;
     inicioY = (maxY - alto) / 2;
-    pthread_mutex_lock(&mutex);
     disparo=0;
+    dibBanner=0;
     modoDisparo = false;
     misil = 8;
-    pthread_mutex_unlock(&mutex);
     /*-----------------------*/
 
     /*SIN LÓGICA APLICADA*/
@@ -101,11 +98,11 @@ int main() {
     pthread_create(&hilo_mov, NULL, movimientoNave, NULL);
     pthread_create(&hilo_pantalla,NULL,(void *)dibujarPantalla, NULL);
     pthread_create(&hilo_proyectil,NULL,(void *)proyectil, NULL);
-    //pthread_create(&hilo_banner,NULL,(void *)banner, NULL);
+    pthread_create(&hilo_banner,NULL,(void *)banner, NULL);
     /*-------------------*/
 
     pthread_join(hilo_mov, NULL);
-    //pthread_join(hilo_banner, NULL);
+    pthread_join(hilo_banner, NULL);
     pthread_join(hilo_pantalla, NULL);
     pthread_join(hilo_proyectil, NULL);
     
@@ -117,7 +114,6 @@ int main() {
 void *banner(void *param) {  
     char titulo[] = ">>>>>>COSMIKERNEL>>>>>>";
     int longitud = strlen(titulo);
-    char buffer[100];
     int i = 0;
 
     while(1){
@@ -125,14 +121,7 @@ void *banner(void *param) {
         for(int j=0; j<longitud; j++){
             buffer[j] = titulo[(i+j) % longitud];
         }
-
-        pthread_mutex_lock(&mutex);
-        attron(COLOR_PAIR(2));
-        mvprintw(0, 49, "%s", buffer);
-        attroff(COLOR_PAIR(2)); 
-        refresh();
-        pthread_mutex_unlock(&mutex);
-        
+        dibBanner=1;
         i = (i + 1) % longitud; 
         usleep(200000); 
     }  
@@ -167,7 +156,7 @@ void *dibujarPantalla(void *arg){
         attroff(COLOR_PAIR(1)); 
 
         attron(COLOR_PAIR(2));
-        mvprintw(0, 49, ">>>>>>COSMIKERNEL>>>>>>");
+        //mvprintw(0, 49, ">>>>>>COSMIKERNEL>>>>>>");
         mvprintw(26, 21, "MODO:%s", modo);
         mvprintw(2, 21, "COMB:%d%%", combustible);
         mvprintw(2, 57, "OXÍG:%d%%", oxigeno);
@@ -188,18 +177,37 @@ void *dibujarPantalla(void *arg){
             yProy=y;
             xProyIni=x;
             if(disparo==1){
-                mvprintw(yProy-2, xProy, "%s", proy);
+                if(yProy-2<corIniY){ // max cordenada Y superior del proyectil
+                    mvprintw(maxCorY, xProy, "%s", proy);
+                }else{
+                    mvprintw(yProy-2, xProy, "%s", proy);
+                }
             }else if(disparo==2){
-                mvprintw(yProy+2, xProy, "%s", proy);
+                if(yProy+2>maxCorY){ // max cordenada Y inferior del proyectil
+                    mvprintw(corIniY, xProy, "%s", proy);
+                }else{
+                    mvprintw(yProy+2, xProy, "%s", proy);
+                }
             }else if(disparo==3){
-                mvprintw(yProy, xProy-4, "%s", proy);
+                if(xProy-4<corIniX){ // max cordenada X izquierda del proyectil
+                    mvprintw(yProy, maxCorX, "%s", proy);
+                }else{
+                    mvprintw(yProy, xProy-4, "%s", proy);
+                }
             }else if(disparo==4){
-                mvprintw(yProy, xProy+4, "%s", proy);
+                if(xProy+4>maxCorX){ // max cordenada X derecha del proyectil
+                    mvprintw(yProy, corIniX, "%s", proy);    
+                }else{
+                    mvprintw(yProy, xProy+4, "%s", proy);
+                }
             }
         }
-
-        // CUALQUIER NAVE QUE ESTÉ EN LAS COORDENADAS DE PROY DEBERÍAN SER DAÑADAS (-OXIGENO, POR EJ)
+        // CUALQUIER NAVE/ASTEROIDE QUE ESTÉ EN LAS COORDENADAS DE PROY DEBERÍAN SER DAÑADAS
         /*-------*/
+
+        if(dibBanner){
+            mvprintw(0, 49, "%s", buffer);
+        }
 
         attroff(COLOR_PAIR(2));
         refresh();
@@ -284,7 +292,6 @@ void *movimientoNave(void *arg){
         if(modoDisparo){
             long long ahora = tiempo_actual_ms();
             if((ahora-ult)>=velocidadDisp){
-                
                 if(misil==0){
                     // si no tengo misiles no tengo la posibilidad de disparar
                 }else{
@@ -323,6 +330,7 @@ void *movimientoNave(void *arg){
 
 }
 
+/*HILO DEL PROYECTIL*/
 void *proyectil(void *arg){
     while(1){
         pthread_mutex_lock(&mutex);
