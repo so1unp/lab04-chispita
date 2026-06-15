@@ -26,12 +26,14 @@
 #define columnas 21
 #define filas 11
 
-#define velocidad 800 // velocidad/cooldown del movimiento de la nave
+#define velocidad 900 // velocidad/cooldown del movimiento de la nave
+#define velocidadDisp 1300 // velocidad/cooldown del disparo de la nave
 
 /*-----VARIABLES INICIALIZADAS-----*/
-char *nave, *modo;
-int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, ini, misil;
-long long ult;
+char *nave, *modo, *proy;
+int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, misil, ini, xProy, yProy, xProyIni;
+long long ult, inicioDisp;
+int volatile disparo;
 pthread_mutex_t mutex;
 
 /*SIN LÓGICA APLICADA*/
@@ -43,18 +45,18 @@ bool modoDisparo;
 void *banner(void *param);
 void *dibujarPantalla(void *param);
 void *movimientoNave(void *arg);
-//void *proyectil(void *arg);
+void *proyectil(void *arg);
 long long tiempo_actual_ms(); // nueva forma de calcular el tiempo en lugar de usar clock()
 
 int main() {
-    setlocale(LC_ALL, "");
+    setlocale(LC_ALL, ""); // esto permite printear caracteres especiales, como la flecha de la nave
     initscr();
     noecho();
-    cbreak();
+    //cbreak();
     curs_set(0);
     //nodelay(stdscr, TRUE); // NO USAR JAMÁS, CONSUME MUCHA CPU JUNTO CON getch()
 
-    pthread_t hilo_mov, hilo_banner, hilo_pantalla; // declaración de hilos
+    pthread_t hilo_mov, hilo_banner, hilo_pantalla, hilo_proyectil; // declaración de hilos
     pthread_mutex_init(&mutex, NULL); // declaración de mutex
     
     /*COLORES*/
@@ -69,6 +71,7 @@ int main() {
     ult = 0;
     nave = "↓";
     modo = "NAVE";
+    proy = "@";
     x = corIniX;
     y = corIniY;
     celAlt = 2; // altura de cada celda
@@ -78,6 +81,11 @@ int main() {
     alto  = filas * celAlt + 1;
     inicioX = (maxX - ancho) / 2;
     inicioY = (maxY - alto) / 2;
+    pthread_mutex_lock(&mutex);
+    disparo=0;
+    modoDisparo = false;
+    misil = 8;
+    pthread_mutex_unlock(&mutex);
     /*-----------------------*/
 
     /*SIN LÓGICA APLICADA*/
@@ -87,19 +95,19 @@ int main() {
     mutexio = 0;
     semaforita = 0;
     kernelio = 0;
-    modoDisparo = false;
-    misil = 10;
     /*-------------------*/
 
     /*DISPARADOR DE HILOS*/
     pthread_create(&hilo_mov, NULL, movimientoNave, NULL);
     pthread_create(&hilo_pantalla,NULL,(void *)dibujarPantalla, NULL);
+    pthread_create(&hilo_proyectil,NULL,(void *)proyectil, NULL);
     //pthread_create(&hilo_banner,NULL,(void *)banner, NULL);
     /*-------------------*/
 
     pthread_join(hilo_mov, NULL);
     //pthread_join(hilo_banner, NULL);
     pthread_join(hilo_pantalla, NULL);
+    pthread_join(hilo_proyectil, NULL);
     
     endwin();
     return 0;
@@ -134,6 +142,7 @@ void *banner(void *param) {
 
 /*HILO PARA DIBUJAR LA INTERFAZ*/
 void *dibujarPantalla(void *arg){   
+    usleep(100000); // aveces al ejecutar el juego la interfaz se rompe, entonces hago que espere un momento
     while(1){
         pthread_mutex_lock(&mutex); 
         erase();
@@ -171,8 +180,27 @@ void *dibujarPantalla(void *arg){
         if(modoDisparo){
             mvprintw(26, 34, "MISIL:%d", misil);
         }else{
-
         }
+        
+        /*DISPARO*/
+        if(misil>=0){
+            xProy=x;
+            yProy=y;
+            xProyIni=x;
+            if(disparo==1){
+                mvprintw(yProy-2, xProy, "%s", proy);
+            }else if(disparo==2){
+                mvprintw(yProy+2, xProy, "%s", proy);
+            }else if(disparo==3){
+                mvprintw(yProy, xProy-4, "%s", proy);
+            }else if(disparo==4){
+                mvprintw(yProy, xProy+4, "%s", proy);
+            }
+        }
+
+        // CUALQUIER NAVE QUE ESTÉ EN LAS COORDENADAS DE PROY DEBERÍAN SER DAÑADAS (-OXIGENO, POR EJ)
+        /*-------*/
+
         attroff(COLOR_PAIR(2));
         refresh();
         pthread_mutex_unlock(&mutex);
@@ -220,65 +248,66 @@ void *movimientoNave(void *arg){
         
         /*MODO NAVE*/
         if(!modoDisparo){
-            if(c!=ERR){
-                long long ahora = tiempo_actual_ms();
-                if(!ini || (ahora-ult)>=velocidad){ 
-                    switch(c) {
-                        case 'w': y=y-celAlt;
-                        if(y<corIniY){
-                            y=maxCorY;
-                        }
-                        break;
-                    
-                        case 's': y=y+celAlt; 
-                        if(y>maxCorY){
-                            y=corIniY;
-                        }
-                        break;
-                            
-                        case 'a': x=x-celAnch; 
-                        if(x<corIniX){
-                            x=maxCorX;
-                        }
-                        break;
-                        
-                        case 'd': x=x+celAnch; 
-                        if(x>maxCorX){
-                            x=corIniX;
-                        }
-                        break;
+            long long ahora = tiempo_actual_ms();
+            if(!ini || (ahora-ult)>=velocidad){ 
+                switch(c) {
+                    case 'w': y=y-celAlt;
+                    if(y<corIniY){
+                        y=maxCorY;
                     }
-                    ult=ahora;
-                    ini=1;
+                    break;
+                
+                    case 's': y=y+celAlt; 
+                    if(y>maxCorY){
+                        y=corIniY;
+                    }
+                    break;
+                        
+                    case 'a': x=x-celAnch; 
+                    if(x<corIniX){
+                        x=maxCorX;
+                    }
+                    break;
+                    
+                    case 'd': x=x+celAnch; 
+                    if(x>maxCorX){
+                        x=corIniX;
+                    }
+                    break;
                 }
+                ult=ahora;
+                ini=1;
             }
         }
 
         /*MODO DISPARO*/
         if(modoDisparo){
-            if(c!=ERR){
-                long long ahora = tiempo_actual_ms();
-                if((ahora-ult)>=velocidad){
+            long long ahora = tiempo_actual_ms();
+            if((ahora-ult)>=velocidadDisp){
+                
+                if(misil==0){
+                    // si no tengo misiles no tengo la posibilidad de disparar
+                }else{
                     switch(c){
-
                         case 'w': misil--;
+                        disparo=1;
                         break;
-                            
+                        
                         case 's': misil--;
+                        disparo=2;
                         break;
                             
                         case 'a': misil--;
+                        disparo=3;
                         break;
-                            
+                        
                         case 'd': misil--;
+                        disparo=4;
                         break;
-                    }
-                    ult=ahora;
-                    ini=1;
-                    if(misil<0){
-                        misil=0;
                     }
                 }
+                inicioDisp = tiempo_actual_ms();
+                ult=ahora;
             }
         }
 
@@ -292,6 +321,20 @@ void *movimientoNave(void *arg){
         pthread_mutex_unlock(&mutex);
     }
 
+}
+
+void *proyectil(void *arg){
+    while(1){
+        pthread_mutex_lock(&mutex);
+        if(disparo){
+            long long ahora2 = tiempo_actual_ms();
+            if((ahora2-inicioDisp)>=500){
+                disparo=0;
+            }
+        }
+        pthread_mutex_unlock(&mutex);
+        usleep(30000);
+    }
 }
 
 /*FUNCIÓN PARA CALCULAR EL TIEMPO DE COOLDOWN*/
