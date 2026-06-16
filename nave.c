@@ -18,22 +18,22 @@
 #include <string.h>
 
 #define corIniX 21 // coordenada x inicial de la nave 
-#define corIniY 4 // coordenada y inicial de la nave
+#define corIniY 5 // coordenada y inicial de la nave
 
 #define maxCorX 101 // coordenada x máxima para la nave
-#define maxCorY 24 // coordenada y máxima para la nave
+#define maxCorY 25 // coordenada y máxima para la nave
 
 #define columnas 21
 #define filas 11
 
 #define velocidad 900 // velocidad/cooldown del movimiento de la nave
-#define velocidadDisp 1300 // velocidad/cooldown del disparo de la nave
+#define velocidadDisp 1000 // velocidad/cooldown del disparo de la nave
 
 /*-----VARIABLES INICIALIZADAS-----*/
 char *nave, *modo, *proy, buffer[100];
 int x, y, celAlt, celAnch, maxY, maxX, ancho, alto, inicioX, inicioY, c, misil, ini, xProy, yProy, xProyIni;
 long long ult, inicioDisp;
-int volatile disparo, dibBanner;
+int volatile disparo, dibBanner, daño;
 pthread_mutex_t mutex;
 
 /*SIN LÓGICA APLICADA*/
@@ -78,11 +78,12 @@ int main() {
     ancho = columnas * celAnch + 1;
     alto  = filas * celAlt + 1;
     inicioX = (maxX - ancho) / 2;
-    inicioY = (maxY - alto) / 2;
-    disparo=0;
-    dibBanner=0;
+    inicioY = (maxY - alto) / 2+1;
+    disparo = 0;
+    dibBanner = 0;
     modoDisparo = false;
-    misil = 8;
+    misil = 20;
+    daño = 0;
     /*-----------------------*/
 
     /*SIN LÓGICA APLICADA*/
@@ -118,10 +119,10 @@ void *banner(void *param) {
 
     while(1){
         memset(buffer, 0, sizeof(buffer)); 
-        for(int j=0; j<longitud; j++){
-            buffer[j] = titulo[(i+j) % longitud];
+        for(int j = 0; j < longitud; j++){
+            buffer[j] = titulo[(i + j) % longitud];
         }
-        dibBanner=1;
+        dibBanner = 1;
         i = (i + 1) % longitud; 
         usleep(200000); 
     }  
@@ -131,7 +132,7 @@ void *banner(void *param) {
 
 /*HILO PARA DIBUJAR LA INTERFAZ*/
 void *dibujarPantalla(void *arg){   
-    usleep(100000); // aveces al ejecutar el juego la interfaz se rompe, entonces hago que espere un momento
+    usleep(300000); // aveces al ejecutar el juego la interfaz se rompe, entonces hago que espere un momento
     while(1){
         pthread_mutex_lock(&mutex); 
         erase();
@@ -156,57 +157,62 @@ void *dibujarPantalla(void *arg){
         attroff(COLOR_PAIR(1)); 
 
         attron(COLOR_PAIR(2));
-        //mvprintw(0, 49, ">>>>>>COSMIKERNEL>>>>>>");
-        mvprintw(26, 21, "MODO:%s", modo);
-        mvprintw(2, 21, "COMB:%d%%", combustible);
-        mvprintw(2, 57, "OXÍG:%d%%", oxigeno);
-        mvprintw(2, 93, "NAVES:%d/5", naves);
-        mvprintw(26, 95, "KERN:%d", kernelio);
-        mvprintw(26, 83, "SEMA:%d", semaforita);
-        mvprintw(26, 71, "MUTE:%d", mutexio);
+        mvprintw(27, 21, "MODO:%s", modo);
+        mvprintw(3, 21, "COMB:%d%%", combustible);
+        mvprintw(3, 57, "OXÍG:%d%%", oxigeno);
+        mvprintw(3, 93, "NAVES:%d/5", naves);
+        mvprintw(27, 95, "KERN:%d", kernelio);
+        mvprintw(27, 83, "SEMA:%d", semaforita);
+        mvprintw(27, 71, "MUTE:%d", mutexio);
         mvprintw(y, x, "%s", nave);
 
         if(modoDisparo){
-            mvprintw(26, 34, "MISIL:%d", misil);
+            mvprintw(27, 34, "MISIL:%d", misil);
         }else{
+
         }
         
         /*DISPARO*/
-        if(misil>=0){
-            xProy=x;
-            yProy=y;
-            xProyIni=x;
-            if(disparo==1){
-                if(yProy-2<corIniY){ // max cordenada Y superior del proyectil
+        if(misil >= 0){
+            xProy = x;
+            yProy = y;
+            xProyIni = x;
+            if(disparo == 1){
+                if(yProy-2 < corIniY){ // max cordenada Y superior del proyectil
                     mvprintw(maxCorY, xProy, "%s", proy);
                 }else{
                     mvprintw(yProy-2, xProy, "%s", proy);
                 }
-            }else if(disparo==2){
-                if(yProy+2>maxCorY){ // max cordenada Y inferior del proyectil
+            }else if(disparo == 2){
+                if(yProy+2 > maxCorY){ // max cordenada Y inferior del proyectil
                     mvprintw(corIniY, xProy, "%s", proy);
                 }else{
                     mvprintw(yProy+2, xProy, "%s", proy);
                 }
-            }else if(disparo==3){
-                if(xProy-4<corIniX){ // max cordenada X izquierda del proyectil
+            }else if(disparo == 3){
+                if(xProy-4 < corIniX){ // max cordenada X izquierda del proyectil
                     mvprintw(yProy, maxCorX, "%s", proy);
                 }else{
                     mvprintw(yProy, xProy-4, "%s", proy);
                 }
-            }else if(disparo==4){
-                if(xProy+4>maxCorX){ // max cordenada X derecha del proyectil
+            }else if(disparo == 4){
+                if(xProy+4 > maxCorX){ // max cordenada X derecha del proyectil
                     mvprintw(yProy, corIniX, "%s", proy);    
                 }else{
                     mvprintw(yProy, xProy+4, "%s", proy);
                 }
+            }
+            if(daño){
+                proy = "🟌";
+            }else{
+                proy = "@";
             }
         }
         // CUALQUIER NAVE/ASTEROIDE QUE ESTÉ EN LAS COORDENADAS DE PROY DEBERÍAN SER DAÑADAS
         /*-------*/
 
         if(dibBanner){
-            mvprintw(0, 49, "%s", buffer);
+            mvprintw(1, 49, "%s", buffer);
         }
 
         attroff(COLOR_PAIR(2));
@@ -225,19 +231,19 @@ void *movimientoNave(void *arg){
         /*SWITCH PARA DIBUJAR LA FLECHA SEGÚN LA TECLA*/
         switch(c) {         
             case 'w':
-            nave= "↑";
+            nave = "↑";
             break;
         
             case 's':
-            nave= "↓";
+            nave = "↓";
             break;
                 
             case 'a':
-            nave= "←";
+            nave = "←";
             break;
             
             case 'd':
-            nave= "→";
+            nave = "→";
             break;
         }
         
@@ -247,9 +253,9 @@ void *movimientoNave(void *arg){
             modoDisparo = !modoDisparo;
                 
             if(modoDisparo){
-                modo= "DISP";
+                modo = "DISP";
             }else{
-                modo= "NAVE";
+                modo = "NAVE";
             }
             break;
         }
@@ -257,64 +263,64 @@ void *movimientoNave(void *arg){
         /*MODO NAVE*/
         if(!modoDisparo){
             long long ahora = tiempo_actual_ms();
-            if(!ini || (ahora-ult)>=velocidad){ 
+            if(!ini || (ahora - ult) >= velocidad){ 
                 switch(c) {
-                    case 'w': y=y-celAlt;
-                    if(y<corIniY){
-                        y=maxCorY;
+                    case 'w': y = y-celAlt;
+                    if(y < corIniY){
+                        y = maxCorY;
                     }
                     break;
                 
-                    case 's': y=y+celAlt; 
-                    if(y>maxCorY){
-                        y=corIniY;
+                    case 's': y = y+celAlt; 
+                    if(y > maxCorY){
+                        y = corIniY;
                     }
                     break;
                         
-                    case 'a': x=x-celAnch; 
-                    if(x<corIniX){
-                        x=maxCorX;
+                    case 'a': x = x-celAnch; 
+                    if(x < corIniX){
+                        x = maxCorX;
                     }
                     break;
                     
-                    case 'd': x=x+celAnch; 
-                    if(x>maxCorX){
-                        x=corIniX;
+                    case 'd': x = x+celAnch; 
+                    if(x > maxCorX){
+                        x = corIniX;
                     }
                     break;
                 }
-                ult=ahora;
-                ini=1;
+                ult = ahora;
+                ini = 1;
             }
         }
 
         /*MODO DISPARO*/
         if(modoDisparo){
             long long ahora = tiempo_actual_ms();
-            if((ahora-ult)>=velocidadDisp){
-                if(misil==0){
+            if((ahora - ult) >= velocidadDisp){
+                if(misil == 0){
                     // si no tengo misiles no tengo la posibilidad de disparar
                 }else{
                     switch(c){
                         case 'w': misil--;
-                        disparo=1;
+                        disparo = 1;
                         break;
                         
                         case 's': misil--;
-                        disparo=2;
+                        disparo = 2;
                         break;
                             
                         case 'a': misil--;
-                        disparo=3;
+                        disparo = 3;
                         break;
                         
                         case 'd': misil--;
-                        disparo=4;
+                        disparo = 4;
                         break;
                     }
                 }
                 inicioDisp = tiempo_actual_ms();
-                ult=ahora;
+                ult = ahora;
             }
         }
 
@@ -327,7 +333,6 @@ void *movimientoNave(void *arg){
         }
         pthread_mutex_unlock(&mutex);
     }
-
 }
 
 /*HILO DEL PROYECTIL*/
@@ -336,8 +341,12 @@ void *proyectil(void *arg){
         pthread_mutex_lock(&mutex);
         if(disparo){
             long long ahora2 = tiempo_actual_ms();
-            if((ahora2-inicioDisp)>=500){
-                disparo=0;
+            if((ahora2 - inicioDisp) >= 400){
+                daño = 1;
+                if((ahora2 - inicioDisp) >= 800){
+                    disparo = 0;
+                    daño = 0;
+                }
             }
         }
         pthread_mutex_unlock(&mutex);
