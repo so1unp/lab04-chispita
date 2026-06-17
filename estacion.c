@@ -16,13 +16,14 @@
             //2. primer hilo creado solo para las acciones y dejo el main como un hilo
             //3. agarro problemas de  a no y voy adaptando lo ultimo en hacer es agg las colas de mensajes  ahi se manejan como un fifo osea el primer que llega
             //ejeucta 
-entonces ayudame con las tareas de a una 
-
+//entonces ayudame con las tareas de a una 
+ //un arrgelo de naves
+ //moviminetos de la nave 
 typedef struct {
     int MAXnaves;
     int navesEnEstacion;
     int tecla;
-    int corriendo; //siempre y cuando sea 1 
+    int corriendo;
 
     int oxigeno;
     int nafta;
@@ -38,12 +39,10 @@ typedef struct {
     int kernelio;
 } EstadoYPF;
 
-//contexto  que tiene el hilo la ventana y el estado compartido
 typedef struct {
     WINDOW *ventana;
     EstadoYPF *estado;
 } Contexto;
-
 
 // hilo de acciones lee las  teclas y aplica el trueque de la ypd
 
@@ -218,7 +217,7 @@ int main()
 
         wrefresh(ventana);
 
-        usleep(100000); //~10 redibujados por segundo, no hace falta mas para una UI de texto
+        usleep(100000); //10 redibujados por segundo, no hace falta mas para una UI de texto
     }
 
     //esperar a que el hilo de acciones termine antes de cerrar ncurses
