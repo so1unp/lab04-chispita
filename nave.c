@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include "compartido.h"
 
 /**
  * ACLARACIONES IMPORTANTE;
@@ -203,6 +204,133 @@ void* hilo_propulsion(void* arg) {
         //AGREGAMOS NUEVA FUNCIONALIDAD: EXTRAER RECURSOS DEL ASTEROIDE CON LA TECLA 'e'
         if (tecla == 'e') {
             extraer = 1; // Le avisa1mos al hilo de extraccion que queremos extraer recursos
+        }
+
+        // Nueva funcionalidad: si se apreta la tecla 'v' se venderan recursos a la estacion
+        if (tecla == 'v')
+        {
+            // Abrimos la cola de mensajes (buzon de la estacion)
+            mqd_t buz_ventas = mq_open(NOMBRE_COLA_VENTAS, O_WRONLY);               
+
+            pthread_mutex_lock(&mutex_pantalla);
+            WINDOW *menu_ypf = newwin(20, 60, 5, 20);
+            box(menu_ypf, 0, 0);
+
+            mvwprintw(menu_ypf, 2, 15, "ESTACION ESPACIAL YPF");
+            mvwprintw(menu_ypf, 5, 5, "[1] Cambiar 5 Deuterio por 10 Nafta");
+            mvwprintw(menu_ypf, 6, 5, "[2] Cambiar 1 de cada mineral por 10 Oxigeno");
+            mvwprintw(menu_ypf, 8, 5, "[q] Desconectar y salir de la estacion");
+
+            // Si no se pudo abrir la cola de mensajes, avisamos al jugador y no mostramos el menu de la estacion
+            if (buz_ventas == (mqd_t)-1) {
+                mvwprintw(menu_ypf, 18, 2, "Aviso: La estacion no abrio su buzon todavia");
+            }
+
+            wtimeout(menu_ypf, 50);
+            pthread_mutex_unlock(&mutex_pantalla);
+
+            int en_menu = 1;
+            while (en_menu)
+            {
+
+                pthread_mutex_lock(&mutex_pantalla);
+                touchwin(menu_ypf);
+                wrefresh(menu_ypf);
+                int opcion = wgetch(menu_ypf);
+                pthread_mutex_unlock(&mutex_pantalla);
+
+                if (opcion == '1')
+                {
+                    pthread_mutex_lock(&mutex_nave);
+                    if (mi_nave.carga_deuterio >= 5)
+                    {
+                        mi_nave.carga_deuterio -= 5;
+                        mi_nave.combustible += 10;
+
+                        // Empaquetar y enviar mensaje para combustible
+                        if (buz_ventas != (mqd_t)-1) {
+                            MensajeVenta msg;
+                            msg.id_nave = 1; 
+                            msg.tipo_operacion = 1; 
+                            msg.carga_deuterio = 5;
+                            msg.carga_mutexio = 0;
+                            msg.carga_semaforita = 0;
+                            msg.carga_kernelio = 0;
+
+                            //enviar el struct por el buzon POSIX
+                            mq_send(buz_ventas, (const char *)&msg, sizeof(MensajeVenta), 0);
+                        }
+
+                        pthread_mutex_lock(&mutex_pantalla);
+                        mvwprintw(menu_ypf, 10, 5, "Trueque exitoso: +10 Combustible!           ");
+                        pthread_mutex_unlock(&mutex_pantalla);
+                    }
+                    else
+                    {
+                        pthread_mutex_lock(&mutex_pantalla);
+                        mvwprintw(menu_ypf, 10, 5, "No tienes suficiente Deuterio.");
+                        pthread_mutex_unlock(&mutex_pantalla);
+                    }
+                    pthread_mutex_unlock(&mutex_nave);
+                }
+                else if (opcion == '2')
+                {
+                    pthread_mutex_lock(&mutex_nave);
+                    // Verificar que tengamos al menos 1 de cada mineral para el trueque
+                    if (mi_nave.carga_mutexio >= 1 &&
+                        mi_nave.carga_semaforita >= 1 &&
+                        mi_nave.carga_kernelio >= 1)
+                    {
+                        mi_nave.carga_mutexio--;
+                        mi_nave.carga_semaforita--;
+                        mi_nave.carga_kernelio--;
+                        mi_nave.oxigeno += 10;
+
+                        // Empaquetar y enviar mensaje para oxigeno
+                        if (buz_ventas != (mqd_t)-1) {
+                            MensajeVenta msg;
+                            msg.id_nave = 1; 
+                            msg.tipo_operacion = 2; 
+                            msg.carga_deuterio = 0;
+                            msg.carga_mutexio = 1;
+                            msg.carga_semaforita = 1;
+                            msg.carga_kernelio = 1;
+
+                            //enviar el struct por el buzon POSIX
+                            mq_send(buz_ventas, (const char *)&msg, sizeof(MensajeVenta), 0);
+                        }
+
+                        pthread_mutex_lock(&mutex_pantalla);
+                        mvwprintw(menu_ypf, 10, 5, "Trueque exitoso: +10 Oxigeno!         ");
+                        pthread_mutex_unlock(&mutex_pantalla);
+                    }
+                    else
+                    {
+                        pthread_mutex_lock(&mutex_pantalla);
+                        mvwprintw(menu_ypf, 10, 5, "No tienes suficientes recursos.");
+                        pthread_mutex_unlock(&mutex_pantalla);
+                    }
+                    pthread_mutex_unlock(&mutex_nave);
+
+                    //wrefresh(menu_ypf);
+                    //sleep(1);
+                }
+                else if (opcion == 'q')
+                {
+                    en_menu = 0;
+                }
+            }
+
+            //Cerramos la cola de mensajes después de salir del menú
+            if (buz_ventas != (mqd_t)-1) {
+                mq_close(buz_ventas); // Cerramos la cola de mensajes después de salir del menú
+            }
+            
+            pthread_mutex_lock(&mutex_pantalla);
+            werase(menu_ypf);
+            wrefresh(menu_ypf);
+            delwin(menu_ypf);
+            pthread_mutex_unlock(&mutex_pantalla);
         }
 
         // Si se apretó una tecla de movimiento, operamos
@@ -415,6 +543,7 @@ int main()
         
         
 
+        /**
         /**
          * Nave y asteroide
          */
