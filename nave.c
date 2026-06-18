@@ -22,8 +22,34 @@
  * por eso deje asi cuando choco con uno, que no se me reste el recurso que tengo.
  */
 
+
+ /*
+ Hoy 18/06: JOAQUIN.
+ - Cuando hago gcc de nave, todavia no me muestra la interfaz como para probar, porque se ve que faltan cosas.
+ - En el struct de Nave agregue una variable llamada "id", en vez de usar un arreglo de naves.
+ - En el main de nave, ahora se lee por terminal el id de la nave, y se asigna a la variable id de la nave.
+ - En el hilo propulsion por la linea 343 y 347 aprox. agregue una logica para que se vea la nave reflejada en el mapa del servidor. (no toque servidor esta vez)
+ - Ahora para poder conectar la nave con la estacion:
+    - Conectarse a la Red: El hilo de la estación tiene que dejar de usar wgetch() 
+    para pedir que alguien aprete el teclado. Tiene que crear el buzón con mq_open y usar mq_receive
+    para atajar los mensajes que tu nave ya le está mandando perfectamente. El mensaje basicamente dice que hay que usar mq_receive en Estacion.c ya
+    que aca en Nave.c esta implementado el mq_open. 
+ - Despues del servidor, nose si queda algo mas pero es una sugerencia que me tiro la IA asi como con la Estacion:
+    - Crear la Memoria Compartida real: El servidor no puede usar una variable local para el mapa. Tiene que usar shm_open,
+    ftruncate y mmap para crear /mapa_espacial en la RAM del sistema operativo. Sin esto, tu nave (y la de cualquiera) se va
+    a cerrar sola al no encontrar el mapa
+    - Actualizar el Contrato: Tienen que agregar #include <semaphore.h> y la matriz de cerraduras (sem_t casilleros[FILAS][COLUMNAS];)
+    adentro de la estructura MapaEspacial en el archivo compartido.h.
+    - Inicializar los Semáforos: En la función que dibuja el mapa por primera vez, el servidor tiene que hacer un sem_init() por cada casillero
+    para dejarlos liberados.
+
+ - Igual que dicen? dejamos el compartido.h o lo fletamos y usamos los struct dentro de las clases que se nos dio (Nave, Estacion, Servidor)? 
+ - OJO, TODAVIA NAVE.C NO FUNCIONA CUANDO HAGO GCC.
+ */
+
 typedef struct
 {
+    int id;
     int x;
     int y;
     int combustible;
@@ -34,7 +60,8 @@ typedef struct
     int carga_kernelio;
 } Nave;
 
-Nave mi_nave = {10, 10, 10000, 100, 0, 0, 0, 0};
+//lo iniciamos en 0, el main lo cambia
+Nave mi_nave = {0, 10, 10, 10000, 100, 0, 0, 0, 0};
 
 /**
  * Variable para controlar el estado del juego
@@ -218,7 +245,7 @@ void *hilo_propulsion(void *arg)
                         if (buz_ventas != (mqd_t)-1)
                         {
                             MensajeVenta msj;
-                            msj.id_nave = 1;
+                            msj.id_nave = mi_nave.id;
                             msj.tipo_operacion = 1;
                             msj.carga_deuterio = 5;
                             msj.carga_mutexio = 0;
@@ -255,7 +282,7 @@ void *hilo_propulsion(void *arg)
                         if (buz_ventas != (mqd_t)-1)
                         {
                             MensajeVenta msj;
-                            msj.id_nave = 1;
+                            msj.id_nave = mi_nave.id;
                             msj.tipo_operacion = 2;
                             msj.carga_deuterio = 0;
                             msj.carga_mutexio = 1;
@@ -303,6 +330,11 @@ void *hilo_propulsion(void *arg)
             pthread_mutex_lock(&mutex_nave);
             if (mi_nave.combustible > 0)
             {
+
+                // Guardamos la posición vieja antes de movernos
+                int vieja_x = mi_nave.x;
+                int vieja_y = mi_nave.y;
+
                 if ((tecla == 'w' || tecla == KEY_UP) && mi_nave.y > 1)
                 {
                     mi_nave.y--;
@@ -323,6 +355,13 @@ void *hilo_propulsion(void *arg)
                     mi_nave.x++;
                     mi_nave.combustible--;
                 }
+
+                //Si la nave se movio, actualizamos la memoria compartida, esto es para que se vea reflejado la nave en el servidor, asi como el mapa.
+                if (vieja_x != mi_nave.x || vieja_y != mi_nave.y) {
+                    mapa_servidor->matriz[vieja_y][vieja_x] = ' '; // Limpiamos la posición vieja
+                    mapa_servidor->matriz[mi_nave.y][mi_nave.x] = 'A'; // Dibujamos la nave en la nueva posición
+                }
+
             }
             if (mi_nave.combustible <= 0)
             {
@@ -338,8 +377,32 @@ void *hilo_propulsion(void *arg)
 /**
  * Programa principal.
  */
-int main()
+int main(int argc, char *argv[]) //leemos terminal
 {
+
+    if (argc < 2) {
+        printf("Error: indicar el numero de nave");
+        printf("Ejemplo: ./nave 1\n");
+        exit(EXIT_FAILURE);
+    }
+
+    int id_jugador = atoi(argv[1]); // guardamos si la nave es 1,2 o 3
+    mi_nave.id = id_jugador; // asignamos el id a la nave
+
+    //Las naves nacen separadas para que no choquen
+    if (id_jugador == 1) {
+        mi_nave.x = 10;
+        mi_nave.y = 10;
+    } else if (id_jugador == 2) {
+        mi_nave.x = 20;
+        mi_nave.y = 20;
+    } else if (id_jugador == 3) {
+        mi_nave.x = 30;
+        mi_nave.y = 30;
+    } else {
+        printf("Error: id de nave invalido. Debe ser 1, 2 o 3.\n");
+        exit(EXIT_FAILURE);
+    }
 
     WINDOW *ventana;
     WINDOW *panel;
@@ -375,6 +438,9 @@ int main()
         endwin();
         exit(EXIT_FAILURE);
     }
+
+    //Inicializo la nave en el servidor de tal forma que esta sea un espejo, asi como lo es el mapa
+    mapa_servidor->matriz[mi_nave.y][mi_nave.x] = 'A';
 
     pthread_t thread_vital, thread_propulsion, thread_extraccion;
     pthread_create(&thread_vital, NULL, hilo_soporte_vital, NULL);

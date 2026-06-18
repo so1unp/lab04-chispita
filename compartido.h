@@ -1,6 +1,8 @@
 #ifndef COMPARTIDO_H // Esta libreria es para compartir estructuras y constantes entre el servidor y la nave
 #define COMPARTIDO_H // Evitamos que se incluya mas de una vez
 
+#include <semaphore.h> // <-- LIBRERIA DE SEMAFOROS (NUEVO)
+
 /**
  * Definimos las estructuras que vamos a usar en el servidor
  */
@@ -52,6 +54,7 @@ typedef struct {
  */
 typedef struct {
     char matriz[FILAS][COLUMNAS];
+    sem_t casilleros[FILAS][COLUMNAS]; // Semaforos para controlar el acceso a cada casillero del mapa
     int juego_activo;
 
     Asteroide asteroides[MAX_ASTEROIDES_FISICOS];
