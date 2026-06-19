@@ -25,7 +25,7 @@
 
  /*
  Hoy 18/06: JOAQUIN.
- - Cuando hago gcc de nave, todavia no me muestra la interfaz como para probar, porque se ve que faltan cosas.
+ - Cuando hago gcc de nave, todavia no me muestra la interfaz como para probar, porque se ve que faltan cosas
  - En el struct de Nave agregue una variable llamada "id", en vez de usar un arreglo de naves.
  - En el main de nave, ahora se lee por terminal el id de la nave, y se asigna a la variable id de la nave.
  - En el hilo propulsion por la linea 343 y 347 aprox. agregue una logica para que se vea la nave reflejada en el mapa del servidor. (no toque servidor esta vez)
@@ -49,7 +49,7 @@
 
 typedef struct
 {
-    int id;
+    int id; //este id lo agregue para que se identifiquen las naves, en vez de arreglo
     int x;
     int y;
     int combustible;
@@ -205,7 +205,9 @@ void *hilo_propulsion(void *arg)
         // ISSUE 2: MECANICAS PARA EL COMERCIO
         if (tecla == 'v')
         {
-            
+            //Esta cola, le esta pidiendo al SO que abra la puerta o una tuberia llamada '/cola_ventas'-------------------
+            //Como no nos conectamos directamente con la estacion, usamos un 'mq_send' para poder mandarle a traves del struct MensajeVentas, a traves de ese buzon para que llegue a la Estacion
+            //Estacion va a recibir el mensaje del buzon con mq_receive.
             mqd_t buz_ventas = mq_open(NOMBRE_COLA_VENTAS, O_WRONLY);
 
             pthread_mutex_lock(&mutex_pantalla);
@@ -422,7 +424,8 @@ int main(int argc, char *argv[]) //leemos terminal
     box(ventana, '|', '=');
     box(panel, '|', '-');
 
-    // Conexion a la memoria compartida POSIX
+    // Conexion a la memoria compartida POSIX.
+    //Aca aparte pedimos al sistema operativo un puntero directo a la memoria RAM donde el servidor dibujo el mapa
     int shm_fd = shm_open("/mapa_espacial", O_RDWR, 0666);
     if (shm_fd == -1)
     {
