@@ -111,71 +111,103 @@ void *hiloAcciones(void *arg) {
 
 while (estado->corriendo) {
 
-        // espero a que llegue un mensaje de alguna nave
-        if (mq_receive(cola_ypf, (char *)&msj, sizeof(MensajeNave), NULL) != -1) {
+    // Esperamos el próximo mensaje de cualquier nave
+    if (mq_receive(cola, (char *)&msj, sizeof(MensajeNave), NULL) == -1)
+        continue;
 
-            int id = msj.id_nave;
-            resp.tipo = msj.tipo_operacion;
-            resp.cantidad = 0; // si no hay stock o algo falla, mando 0
+    // Mensaje especial de cierre: salimos limpiamente
+    if (msj.tipo_operacion == -1)
+        break;
 
-            // si llega -1 es la señal de cierre, salgo del bucle
-            if (msj.tipo_operacion == -1) {
-                break;
-            }
+    int nave_id = msj.id_nave;
 
-            // valido que el id de la nave tenga sentido
-            if (id < 0 || id >= MAX_NAVES) {
-                printf("[ESTACION] Nave %d invalida, ignoro el mensaje.\n", id);
-                continue;
-            }
+    // Ignoramos mensajes de naves que no existen o ya se desconectaron
+    bool nave_valida = nave_id >= 0
+                    && nave_id < MAX_NAVES
+                    && mapa_compartido->naves[nave_id].activa;
 
-            switch (msj.tipo_operacion) {
-
-                case 1: // nafta: la nave paga 5 deuterio y recibe 10 de nafta
-                    pthread_mutex_lock(&estado->mutex_nafta);
-                    if (estado->deuterio >= 5 && estado->nafta >= 10) {
-                        estado->deuterio -= 5;
-                        estado->nafta -= 10;
-                        estado->recolector1++;
-                        estado->nafta_jugador += 10;
-                        resp.cantidad = 10;
-                        printf("[ESTACION] +10 nafta a Nave %d (costo: 5 deuterio)\n", id);
-                    } else {
-                        printf("[ESTACION] Sin stock para atender a Nave %d\n", id);
-                    }
-                    pthread_mutex_unlock(&estado->mutex_nafta);
-                    break;
-
-                case 2: // oxigeno: la nave paga 1 de cada mineral y recibe 10 de oxigeno
-                    pthread_mutex_lock(&estado->mutex_oxigeno);
-                    if (estado->mutexio >= 1 &&
-                        estado->semaforita >= 1 &&
-                        estado->kernelio >= 1 &&
-                        estado->oxigeno >= 10) {
-                        estado->mutexio--;
-                        estado->semaforita--;
-                        estado->kernelio--;
-                        estado->oxigeno -= 10;
-                        estado->recolector0 += 3;
-                        estado->oxigeno_jugador += 10;
-                        resp.cantidad = 10;
-                        printf("[ESTACION] +10 oxigeno a Nave %d\n", id);
-                    } else {
-                        printf("[ESTACION] Recursos insuficientes para Nave %d\n", id);
-                    }
-                    pthread_mutex_unlock(&estado->mutex_oxigeno);
-                    break;
-            }
-
-            // mando la respuesta a nave.c con lo que se pudo cargar
-            mq_send(cola_respuesta, (char *)&resp, sizeof(RespuestaEstacion), 0);
-            fflush(stdout);
-        }
+    if (!nave_valida) {
+        printf("[ESTACION] Mensaje ignorado: nave %d inválida o inactiva.\n", nave_id);
+        continue;
     }
 
-    mq_close(cola_ypf);
-    mq_close(cola_respuesta);
-    return NULL;
+    // ── Operación 1: Recarga de nafta (la nave paga con deuterio) ──────────
+    if (msj.tipo_operacion == 1) {
+
+        pthread_mutex_lock(&estado->mutex_nafta);
+
+        int combustible_actual  = mapa_compartido->naves[nave_id].combustible;
+        int deuterio_nave       = mapa_compartido->naves[nave_id].deuterio;
+
+        // Cargamos hasta 10 unidades, o lo que falte para llegar a 100
+        int cantidad_a_cargar   = (combustible_actual > 90) ? (100 - combustible_actual) : 10;
+
+        // Tasa de cambio: cada 2 unidades de nafta cuestan 1 deuterio
+        int costo_deuterio      = cantidad_a_cargar / 2;
+
+        bool nave_necesita      = combustible_actual < 100;
+        bool estacion_tiene     = estado->nafta >= cantidad_a_cargar;
+        bool nave_puede_pagar   = deuterio_nave   >= costo_deuterio;
+
+        if (nave_necesita && estacion_tiene && nave_puede_pagar) {
+            // Cobramos a la nave y acreditamos a la estación
+            mapa_compartido->naves[nave_id].deuterio  -= costo_deuterio;
+            estado->deuterio                          += costo_deuterio;
+
+            // Transferimos la nafta
+            estado->nafta                             -= cantidad_a_cargar;
+            mapa_compartido->naves[nave_id].combustible += cantidad_a_cargar;
+            estado->recolector1++;
+
+            printf("[ESTACION] Nave %d recargó %d de nafta (pagó %d deuterio).\n",
+                   nave_id, cantidad_a_cargar, costo_deuterio);
+        } else {
+            printf("[ESTACION] Recarga rechazada para nave %d: "
+                   "tanque lleno, deuterio insuficiente, o estación sin stock.\n", nave_id);
+        }
+
+        pthread_mutex_unlock(&estado->mutex_nafta);
+    }
+
+    // ── Operación 2: Recarga de oxígeno (la nave paga con minerales) ───────
+    else if (msj.tipo_operacion == 2) {
+
+        pthread_mutex_lock(&estado->mutex_oxigeno);
+
+        int oxigeno_actual  = mapa_compartido->naves[nave_id].oxigeno;
+
+        // El precio es 1 unidad de cada mineral: mutexio, semaforita y kernelio
+        bool nave_tiene_minerales = mapa_compartido->naves[nave_id].mutexio   >= 1
+                                 && mapa_compartido->naves[nave_id].semaforita >= 1
+                                 && mapa_compartido->naves[nave_id].kernelio   >= 1;
+
+        bool nave_necesita    = oxigeno_actual < 100;
+        bool estacion_tiene   = estado->oxigeno >= 10;
+
+        if (nave_necesita && estacion_tiene && nave_tiene_minerales) {
+            int cantidad_a_cargar = (oxigeno_actual > 90) ? (100 - oxigeno_actual) : 10;
+
+            // Cobramos los tres minerales
+            mapa_compartido->naves[nave_id].mutexio--;
+            mapa_compartido->naves[nave_id].semaforita--;
+            mapa_compartido->naves[nave_id].kernelio--;
+
+            // Transferimos el oxígeno
+            estado->oxigeno                          -= cantidad_a_cargar;
+            mapa_compartido->naves[nave_id].oxigeno  += cantidad_a_cargar;
+            estado->recolector0 += 3; // 3 minerales cobrados
+
+            printf("[ESTACION] Nave %d recargó %d de oxígeno (pagó 1 mutexio + 1 semaforita + 1 kernelio).\n",
+                   nave_id, cantidad_a_cargar);
+        } else {
+            printf("[ESTACION] Recarga rechazada para nave %d: "
+                   "oxígeno lleno, minerales insuficientes, o estación sin stock.\n", nave_id);
+        }
+
+        pthread_mutex_unlock(&estado->mutex_oxigeno);
+    }
+
+    fflush(stdout);
 }
     mq_close(cola);
     return NULL;
