@@ -1,31 +1,37 @@
-#ifndef COMPARTIDO_H // Esta libreria es para compartir estructuras y constantes entre el servidor y la nave
-#define COMPARTIDO_H // Evitamos que se incluya mas de una vez
+#ifndef COMPARTIDO_H
+#define COMPARTIDO_H
 
-#include <semaphore.h> // <-- LIBRERIA DE SEMAFOROS (NUEVO)
+#include <pthread.h>
 
-/**
- * Definimos las estructuras que vamos a usar en el servidor
- */
-#define FILAS 40 
-#define COLUMNAS 100
-#define MAX_ASTEROIDES_FISICOS 50 
-#define NOMBRE_COLA_VENTAS "/cola_ventas" // Nombre de la cola de mensajes para las ventas
+#define FILAS 27
+#define COLUMNAS 103
+#define MAX_ASTEROIDES_FISICOS 100
+#define MAX_NAVES 9 // -- valor modificado
+#define MAX_ESTACIONES 10 // -- agregado
+//#define COLA_ESTACION "/cola_ypf"  SE BORRA LA COLA HARDCODEADA
 
-/**
- * Estructura para representar el mensaje de venta
- */
+/*STRUCT DE ESTADO DE ESTACION.C*/
 typedef struct {
-    int id_nave;
-    int tipo_operacion; // 1 para comprar combustible, 2 para comprar oxigeno
-    int carga_deuterio;
-    int carga_mutexio;  
-    int carga_semaforita;
-    int carga_kernelio;
-} MensajeVenta;
+    int MAXnaves;
+    int corriendo;
+    int oxigeno;
+    int nafta;
+    int deuterio;
+    int recolector0;
+    int recolector1;
 
-/**
- * Asteroide en el mapa 
- */
+    /*MUTEX PARA EVITAR PROBLEMAS AL DESCONTAR STOCK*/
+    pthread_mutex_t mutex_nafta;
+    pthread_mutex_t mutex_oxigeno;
+} EstadoYPF;
+
+/*STRUCT DE PASAJE DE MENSAJES EN LA COLA (INTERCAMBIOS CON LA ESTACIÓN)*/
+typedef struct {
+    int tipo_operacion;
+    int id_nave;        
+} MensajeNave;
+
+/*STRUCTS DE LA MEMORIA COMPARTIDA*/
 typedef struct {
     int x;
     int y;
@@ -33,39 +39,41 @@ typedef struct {
     int mutexio;
     int semaforita;
     int kernelio;
-    int activo; 
+    int activo;
 } Asteroide;
 
-
-/**
- * Estacion en el mapa, son 3 estaciones maximo
- */
 typedef struct {
     int x;
     int y;
-    int combustible;
-} Estacion;
+    int activa;
+    char modo[15];         
+    int combustible;       
+    int oxigeno;           
+    int kernelio;
+    int semaforita;
+    int mutexio;
+    int deuterio;
+    int modoDisparo;       
+    int misil;             
+    int disparo;
+    int xProy;
+    int yProy;           
+} Nave;
 
-
-/**
- * Mapa espacial, que contiene la matriz del mapa, una variable de si el juego esta activo o no,
- * la cantidad maxima de asteroides, las estaciones que son 3 
- * y los minerales con los precios
- */
 typedef struct {
-    char matriz[FILAS][COLUMNAS];
-    sem_t casilleros[FILAS][COLUMNAS]; // Semaforos para controlar el acceso a cada casillero del mapa
-    int juego_activo;
+    int x;
+    int y;
+    int activa;
+} EstacionEspacial;
 
+/*MAPEO DE MMAP DE LA MEMORIA COMPARTIDA*/
+typedef struct {
+    int cantidad_naves_permitidas; // -- agregado
+    int cantidad_estaciones; // -- agregado
     Asteroide asteroides[MAX_ASTEROIDES_FISICOS];
-    Estacion estaciones[3];
-
-    int precio_deuterio;
-    int precio_mutexio;
-    int precio_semaforita;
-    int precio_kernelio;
-    int precio_combustible;
-    int precio_oxigeno;
+    Nave naves[MAX_NAVES];
+    EstacionEspacial estaciones[MAX_ESTACIONES]; // -- modificado, ahora es un arreglo de estaciones y no un único objeto estación
+    int juego_activo;
 } MapaEspacial;
 
-#endif // COMPARTIDO_H
+#endif
