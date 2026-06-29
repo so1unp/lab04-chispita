@@ -7,7 +7,7 @@
 #define COLUMNAS 103
 #define MAX_ASTEROIDES_FISICOS 100
 #define MAX_NAVES 9 // -- valor modificado
-#define MAX_ESTACIONES 10 // -- agregado
+#define MAX_ESTACIONES 3 // -- agregado
 //#define COLA_ESTACION "/cola_ypf"  SE BORRA LA COLA HARDCODEADA
 
 /*STRUCT DE ESTADO DE ESTACION.C*/

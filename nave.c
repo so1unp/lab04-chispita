@@ -4,6 +4,7 @@
 */ 
 
 #include <ncurses.h>
+#include <time.h>
 #include <locale.h>
 #include <stdbool.h>
 #include <pthread.h>
@@ -14,7 +15,6 @@
 #include <fcntl.h>
 #include <mqueue.h>
 #include "compartido.h"
-#include <time.h>
 
 #define corIniX 5 
 #define corIniY 5 
@@ -81,18 +81,30 @@ int main(int argc, char *argv[]) {
     }
     
     mi_id = atoi(argv[1]);
-
-    /*Validar el ID de la nave */
+    
+    /*Validacion de naves permitidas*/
     if (mi_id < 0 || mi_id >= mapa->cantidad_naves_permitidas) {
-        endwin();
-        printf("Acceso denegado: El servidor solo permite IDs del 0 al %d.\n", mapa->cantidad_naves_permitidas - 1);
+        printf("ERROR: ID de nave %d no permitido.\n", mi_id);
+        printf("El servidor configuró un límite máximo de %d naves (IDs válidos: 0 a %d).\n", 
+               mapa->cantidad_naves_permitidas, mapa->cantidad_naves_permitidas - 1);
+        
+        munmap(mapa, sizeof(MapaEspacial));
+        close(fd);
         exit(EXIT_FAILURE);
     }
-    
+
+    if (mapa->naves[mi_id].activa == 1) {
+        printf("ERROR: La nave con ID %d ya está activa y siendo operada por otro jugador.\n", mi_id);
+        
+        munmap(mapa, sizeof(MapaEspacial));
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    /*Spawn separado para cada nave*/
     mapa->naves[mi_id].activa = 1;
-    mapa->naves[mi_id].x = corIniX;
+    mapa->naves[mi_id].x = corIniX + (mi_id * 5);
     mapa->naves[mi_id].y = corIniY;
-    /*------------------*/
     
     /*COLORES*/
     start_color();
@@ -107,7 +119,7 @@ int main(int argc, char *argv[]) {
     nave = "↓";
     modo = "NAVE";
     proy = "@";
-    x = corIniX;
+    x = corIniX + (mi_id * 5);
     y = corIniY;
     celAlt = 2; 
     celAnch = 4; 
@@ -226,7 +238,7 @@ void *dibujarPantalla(void *arg){
         mvprintw(y, x, "%s", nave);
 
         /*-------------*/
-        for (int i = 0; i < mapa->cantidad_naves_permitidas; i++) {
+        for (int i = 0; i < MAX_NAVES; i++) {
             if (i != mi_id && mapa->naves[i].activa) {
                 mvprintw(mapa->naves[i].y, mapa->naves[i].x, "▲");
             }
@@ -539,7 +551,7 @@ long long tiempoActual() {
 
 /*FUNCIÓN PARA CALCULAR LA COLISIÓN DE DOS NAVES*/
 int posOcupada(int x, int y) {
-    for (int i = 0; i < mapa->cantidad_naves_permitidas; i++) {
+    for (int i = 0; i < MAX_NAVES; i++) {
         if (i != mi_id && mapa->naves[i].activa && mapa->naves[i].x == x && mapa->naves[i].y == y) {
             return 1;
         }

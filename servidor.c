@@ -21,15 +21,10 @@ void colisionProy(MapaEspacial *mapa);
 void generarEstacion(MapaEspacial *mapa, int cantidad);
 void generarAsteroide(MapaEspacial *mapa, int cantidad);
 
+/* Como leemos del txt, ya no hace falta validar argc y argv, pero dejamos la firma estándar */
 int main(int argc, char *argv[])
 {
-
-    /*Esto es para validar las naves*/
-    if (argc < 3) {
-        printf("Error. Uso: ./servidor <cantidad_naves> <cantidad_estaciones>\n");
-        exit(EXIT_FAILURE);
-    }
-
+    /* 1. CREACIÓN Y MAPEO DE LA MEMORIA COMPARTIDA */
     int shh_fd = shm_open("/mapa_espacial", O_CREAT | O_RDWR, 0666);
     if (shh_fd == -1)
     {
@@ -46,30 +41,51 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    /*Guardar la cantidad de naves en la memoria compartida*/
-    int limite_naves = atoi(argv[1]);
-    if (limite_naves > MAX_NAVES) {
-        limite_naves = MAX_NAVES; //proteccion por si piden demasiadas
+    /* ------------------------------------------------------------- */
+    /* 2. LECTURA DEL ARCHIVO CONFIG.TXT (SISTEMA DE ARCHIVOS)       */
+    /* ------------------------------------------------------------- */
+    FILE *archivo_config = fopen("config.txt", "r");
+    
+    if (archivo_config == NULL) {
+        perror("¡Error! No se encontró el archivo config.txt");
+        munmap(mapa_servidor, sizeof(MapaEspacial));
+        shm_unlink("/mapa_espacial");
+        exit(EXIT_FAILURE);
     }
-    mapa_servidor->cantidad_naves_permitidas = limite_naves; 
 
-    /*Guardar la cantidad de estaciones en la memoria compartida*/
-    int limite_estaciones = atoi(argv[2]);
-    if (limite_estaciones > MAX_ESTACIONES) {
-        limite_estaciones = MAX_ESTACIONES; //proteccion por si piden demasiadas
+    int conf_estaciones = 0;
+    int conf_naves = 0;
+
+    // Leemos los valores del archivo
+    fscanf(archivo_config, "ESTACIONES=%d\n", &conf_estaciones);
+    fscanf(archivo_config, "NAVES=%d\n", &conf_naves);
+    
+    fclose(archivo_config); // Cerramos el archivo
+
+    // VALIDACIÓN: Evitar que el usuario ponga números ridículos que rompan la memoria
+    if (conf_estaciones > MAX_ESTACIONES) conf_estaciones = MAX_ESTACIONES;
+    if (conf_naves > MAX_NAVES) conf_naves = MAX_NAVES;
+
+    // GUARDAMOS EN MEMORIA COMPARTIDA (¡Ahora sí tienen valor y no son cero!)
+    mapa_servidor->cantidad_estaciones = conf_estaciones;
+    mapa_servidor->cantidad_naves_permitidas = conf_naves;
+    /* ------------------------------------------------------------- */
+
+    /*Bucle para limpiar naves fantasmas*/
+    for (int i = 0; i < MAX_NAVES; i++) {
+        mapa_servidor->naves[i].activa = 0;
     }
-    mapa_servidor->cantidad_estaciones = limite_estaciones;
 
+    /* 3. GENERACIÓN DEL ESCENARIO */
     srand(time(NULL));
     generarAsteroide(mapa_servidor, 20);
-    generarEstacion(mapa_servidor, mapa_servidor->cantidad_estaciones); // Generar estaciones según la cantidad especificada
+    
+    // Le pasamos la cantidad de estaciones que leímos del archivo
+    generarEstacion(mapa_servidor, mapa_servidor->cantidad_estaciones);
 
     mapa_servidor->juego_activo = 1;
 
-    printf("Compilando la estacion YPF...\n");
-    system("gcc -o estacion estacion.c -lrt -lpthread");
-
-    //Agregamos el for para poder levantar las estaciones al prender el servidor
+    /* 4. LEVANTAR LAS ESTACIONES DINÁMICAMENTE (FORK + EXEC) */
     for (int i = 0; i < mapa_servidor->cantidad_estaciones; i++) {
         pid_t pid = fork();
 
@@ -77,27 +93,25 @@ int main(int argc, char *argv[])
             perror("Error al hacer el fork");
             exit(EXIT_FAILURE);
         } else if (pid == 0) {
-            //proceso hijo
+            // CÓDIGO DEL PROCESO HIJO
             char id_str[20];
-            sprintf(id_str, "%d", i);
+            sprintf(id_str, "%d", i); // Pasamos la i a texto
 
-            //Abrimos una terminal nueva (x-terminal-emulator) "-e" "./estacion"
             execlp("x-terminal-emulator", "x-terminal-emulator", "-e", "./estacion", id_str, NULL);
 
-            //si falla el programa, el programa sigue por aca e imprime el error
             perror("Fallo al ejecutar la estacion");
             exit(EXIT_FAILURE);
         }
-
     }
 
+    /* 5. INICIALIZACIÓN DE INTERFAZ GRÁFICA (Solo el Padre llega acá) */
     initscr();
     noecho();
     cbreak();
     curs_set(0);
     timeout(100);
 
-    /*BUCLE PRINCIPAL DEL SERVIDOR*/
+    /* 6. BUCLE PRINCIPAL DEL SERVIDOR */
     while (mapa_servidor->juego_activo)
     {
         erase();
@@ -108,6 +122,7 @@ int main(int argc, char *argv[])
         mvprintw(1, 0, "Asteroides generados: %d", 20);
 
         int naves_conectadas = 0;
+        // Contamos basándonos en la configuración lógica permitida
         for (int i = 0; i < mapa_servidor->cantidad_naves_permitidas; i++)
         {
             if (mapa_servidor->naves[i].activa)
@@ -126,6 +141,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* 7. APAGADO SEGURO */
     endwin();
     munmap(mapa_servidor, sizeof(MapaEspacial));
     shm_unlink("/mapa_espacial");
@@ -146,7 +162,7 @@ void generarAsteroide(MapaEspacial *mapa, int cantidad)
         int y = corIniY + fila * celAlt;
 
         if (x == corIniX && y == corIniY)
-        { // si coincide con la cordenada inicial de la nave se ignora
+        { 
             continue;
         }
 
@@ -155,13 +171,13 @@ void generarAsteroide(MapaEspacial *mapa, int cantidad)
         {
             if (mapa->asteroides[i].x == x && mapa->asteroides[i].y == y)
             {
-                ocupado = 1; // si se genera un asteroide encima de otro, ocupado valdrá 1
+                ocupado = 1; 
                 break;
             }
         }
 
         if (!ocupado)
-        { // y si es 1, entonces no generará ese asteroide
+        { 
             mapa->asteroides[generados].x = x;
             mapa->asteroides[generados].y = y;
             mapa->asteroides[generados].deuterio = rand() % 2;
@@ -178,49 +194,27 @@ void colisionProy(MapaEspacial *mapa)
 {
     for (int i = 0; i < mapa->cantidad_naves_permitidas; i++)
     {
-        /*SI LA NAVE DISPARA SE EJECUTARÁ ESTO*/
         if (mapa->naves[i].activa && mapa->naves[i].disparo > 0)
         {
-
             int xProyectil = mapa->naves[i].x;
             int yProyectil = mapa->naves[i].y;
             int dir = mapa->naves[i].disparo;
 
-            if (dir == 1)
-            {
-                yProyectil -= 2; // arriba
-            }
-            else if (dir == 2)
-            {
-                yProyectil += 2; // abajo
-            }
-            else if (dir == 3)
-            {
-                xProyectil -= 4; // izquierda
-            }
-            else if (dir == 4)
-            {
-                xProyectil += 4; // derecha
-            }
+            if (dir == 1) yProyectil -= 2; // arriba
+            else if (dir == 2) yProyectil += 2; // abajo
+            else if (dir == 3) xProyectil -= 4; // izquierda
+            else if (dir == 4) xProyectil += 4; // derecha
 
             /*LÓGICA DE DAÑO HACIA OTRAS NAVES*/
             for (int k = 0; k < mapa->cantidad_naves_permitidas; k++)
             {
-                /*SI LAS CORDENADAS DEL PROYECTIL COINCIDE CON LA OTRA NAVE SE EJECUTARÁ ESTO*/
                 if (k != i && mapa->naves[k].activa && mapa->naves[k].x == xProyectil && mapa->naves[k].y == yProyectil)
                 {
-
                     mapa->naves[k].oxigeno -= 20;
                     mapa->naves[k].combustible -= 20;
 
-                    if (mapa->naves[k].oxigeno < 0)
-                    {
-                        mapa->naves[k].oxigeno = 0;
-                    }
-                    if (mapa->naves[k].combustible < 0)
-                    {
-                        mapa->naves[k].combustible = 0;
-                    }
+                    if (mapa->naves[k].oxigeno < 0) mapa->naves[k].oxigeno = 0;
+                    if (mapa->naves[k].combustible < 0) mapa->naves[k].combustible = 0;
 
                     mapa->naves[i].disparo = 0;
                     break;
@@ -230,10 +224,8 @@ void colisionProy(MapaEspacial *mapa)
             /*LÓGICA DE DAÑO A ASTEROIDES*/
             for (int j = 0; j < MAX_ASTEROIDES_FISICOS; j++)
             {
-                /*SI LAS CORDENADAS DEL PROYECTIL COINCIDE CON UN ASTEROIDE SE EJECUTARÁ ESTO*/
                 if (mapa->asteroides[j].activo && mapa->asteroides[j].x == xProyectil && mapa->asteroides[j].y == yProyectil)
                 {
-
                     mapa->asteroides[j].activo = 0;
 
                     /*RECOMPENSAS DEL ASTEROIDE*/
@@ -267,7 +259,6 @@ void generarEstacion(MapaEspacial *mapa, int cantidad)
         /*LÓGICA DE GENERACIÓN DE LA ESTACIÓN*/
         for (int i = 0; i < MAX_ASTEROIDES_FISICOS; i++)
         {
-            /*SI LAS CORDENADAS DE LA ESTACIÓN COINCIDE CON ALGUNA ASTEROIDE EJECUTARÁ LO SIGUIENTE*/
             if (mapa->asteroides[i].activo && mapa->asteroides[i].x == x && mapa->asteroides[i].y == y)
             {
                 ocupado = 1;
@@ -285,7 +276,7 @@ void generarEstacion(MapaEspacial *mapa, int cantidad)
             }
         }
 
-        /*Si el lugar esta libre para la estacion, la guardamos en un arreglo*/
+        /*Si el lugar esta libre para la estacion, la guardamos en el arreglo*/
         if (!ocupado)
         {
             mapa->estaciones[generadas].x = x;

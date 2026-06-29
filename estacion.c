@@ -1,302 +1,283 @@
-// librerias que use yo
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <mqueue.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
 #include <string.h>
-#include <stdbool.h>
-// heard que creamos para las variables compartidas
+#include <ncurses.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include "compartido.h"
 
-#define QUEUE_PERMISSIONS 0666 // permisos de la cola de mensajes
+#define corIniX 5
+#define corIniY 5
 
-// Memoria compartida global
-MapaEspacial *mapa_compartido = NULL;
-int mi_id_global; //para que el hilo sepa su id
+#define celAnch 4
+#define celAlt 2
 
-// funciones de los hilos
-void *hiloAcciones(void *arg);
-void *hiloConsumo(void *arg);
+#define columnas 13
+#define filas 11
 
+void colisionProy(MapaEspacial *mapa);
+void generarEstacion(MapaEspacial *mapa, int cantidad);
+void generarAsteroide(MapaEspacial *mapa, int cantidad);
+
+/* Como leemos del txt, ya no hace falta validar argc y argv, pero dejamos la firma estándar */
 int main(int argc, char *argv[])
 {
-    if (argc < 2) {
-        printf("Error. Uso: ./estacion <id_estacion>\n");
-        exit(1);
-    }
-
-    mi_id_global = atoi(argv[1]);
-
-    // Enlazar Memoria Compartida
-    int fd = shm_open("/mapa_espacial", O_RDWR, 0666);
-
-    if (fd == -1)
+    /* 1. CREACIÓN Y MAPEO DE LA MEMORIA COMPARTIDA */
+    int shh_fd = shm_open("/mapa_espacial", O_CREAT | O_RDWR, 0666);
+    if (shh_fd == -1)
     {
-        perror("Ejecutar ./servidor primero");
-        exit(1);
+        perror("¡Error al crear la memoria compartida!");
+        exit(EXIT_FAILURE);
     }
 
-    mapa_compartido = (MapaEspacial *)
-        mmap(NULL, sizeof(MapaEspacial), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    ftruncate(shh_fd, sizeof(MapaEspacial));
 
-    if (mapa_compartido == MAP_FAILED)
+    MapaEspacial *mapa_servidor = mmap(NULL, sizeof(MapaEspacial), PROT_READ | PROT_WRITE, MAP_SHARED, shh_fd, 0);
+    if (mapa_servidor == MAP_FAILED)
     {
-        perror("Error de  mmap");
-        exit(1);
+        perror("¡Error al mapear la memoria compartida!");
+        exit(EXIT_FAILURE);
     }
 
-    // inicio de estacion como arranca la estacion
-    EstadoYPF estado = {
-        .MAXnaves = 3,
-        .corriendo = 1,
-        .oxigeno = 9999,
-        .nafta = 9999,
-        .deuterio = 0,
-        .recolector0 = 0,
-        .recolector1 = 0};
+    /* ------------------------------------------------------------- */
+    /* 2. LECTURA DEL ARCHIVO CONFIG.TXT (SISTEMA DE ARCHIVOS)       */
+    /* ------------------------------------------------------------- */
+    FILE *archivo_config = fopen("config.txt", "r");
+    
+    if (archivo_config == NULL) {
+        perror("¡Error! No se encontró el archivo config.txt");
+        munmap(mapa_servidor, sizeof(MapaEspacial));
+        shm_unlink("/mapa_espacial");
+        exit(EXIT_FAILURE);
+    }
 
-    struct mq_attr cola_attr = {
-        .mq_flags = 0,
-        .mq_maxmsg = 10,
-        .mq_msgsize = sizeof(MensajeNave),
-        .mq_curmsgs = 0};
+    int conf_estaciones = 0;
+    int conf_naves = 0;
 
-        
-    char nombre_cola[50];
-    sprintf(nombre_cola, "/cola_estacion_%d", mi_id_global);
+    // Leemos los valores del archivo
+    fscanf(archivo_config, "ESTACIONES=%d\n", &conf_estaciones);
+    fscanf(archivo_config, "NAVES=%d\n", &conf_naves);
+    
+    fclose(archivo_config); // Cerramos el archivo
 
-    mq_unlink(nombre_cola);
-    mqd_t cola_principal = mq_open(nombre_cola, O_CREAT | O_RDWR, QUEUE_PERMISSIONS, &cola_attr);
+    // VALIDACIÓN: Evitar que el usuario ponga números ridículos que rompan la memoria
+    if (conf_estaciones > MAX_ESTACIONES) conf_estaciones = MAX_ESTACIONES;
+    if (conf_naves > MAX_NAVES) conf_naves = MAX_NAVES;
 
-    if (cola_principal == (mqd_t)-1)
+    // GUARDAMOS EN MEMORIA COMPARTIDA (¡Ahora sí tienen valor y no son cero!)
+    mapa_servidor->cantidad_estaciones = conf_estaciones;
+    mapa_servidor->cantidad_naves_permitidas = conf_naves;
+    /* ------------------------------------------------------------- */
+
+    /* 3. GENERACIÓN DEL ESCENARIO */
+    srand(time(NULL));
+    generarAsteroide(mapa_servidor, 20);
+    
+    // Le pasamos la cantidad de estaciones que leímos del archivo
+    generarEstacion(mapa_servidor, mapa_servidor->cantidad_estaciones);
+
+    mapa_servidor->juego_activo = 1;
+
+    /* 4. LEVANTAR LAS ESTACIONES DINÁMICAMENTE (FORK + EXEC) */
+    for (int i = 0; i < mapa_servidor->cantidad_estaciones; i++) {
+        pid_t pid = fork();
+
+        if (pid < 0) {
+            perror("Error al hacer el fork");
+            exit(EXIT_FAILURE);
+        } else if (pid == 0) {
+            // CÓDIGO DEL PROCESO HIJO
+            char id_str[10];
+            sprintf(id_str, "%d", i); // Pasamos la i a texto
+
+            execlp("x-terminal-emulator", "x-terminal-emulator", "-e", "./estacion", id_str, NULL);
+
+            perror("Fallo al ejecutar la estacion");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    /* 5. INICIALIZACIÓN DE INTERFAZ GRÁFICA (Solo el Padre llega acá) */
+    initscr();
+    noecho();
+    cbreak();
+    curs_set(0);
+    timeout(100);
+
+    /* 6. BUCLE PRINCIPAL DEL SERVIDOR */
+    while (mapa_servidor->juego_activo)
     {
-        perror("Error crear cola");
-        exit(1);
+        erase();
+
+        colisionProy(mapa_servidor);
+
+        mvprintw(0, 0, "--- SERVIDOR DEL SECTOR ESPACIAL ACTIVO ---");
+        mvprintw(1, 0, "Asteroides generados: %d", 20);
+
+        int naves_conectadas = 0;
+        // Contamos basándonos en la configuración lógica permitida
+        for (int i = 0; i < mapa_servidor->cantidad_naves_permitidas; i++)
+        {
+            if (mapa_servidor->naves[i].activa)
+                naves_conectadas++;
+        }
+
+        mvprintw(2, 0, "Naves activas en el servidor: %d/%d", naves_conectadas, mapa_servidor->cantidad_naves_permitidas);
+        mvprintw(3, 0, "Presione 'q' para apagar el servidor.");
+
+        refresh();
+
+        int tecla = getch();
+        if (tecla == 'q')
+        {
+            mapa_servidor->juego_activo = 0;
+        }
     }
 
-    // inicio lo mutex
-    pthread_mutex_init(&estado.mutex_nafta, NULL);
-    pthread_mutex_init(&estado.mutex_oxigeno, NULL);
-
-    pthread_t hilo_atencion, hilo_desgaste;
-    pthread_create(&hilo_atencion, NULL, hiloAcciones, &estado);
-    pthread_create(&hilo_desgaste, NULL, hiloConsumo, &estado);
-
-    system("clear");
-    printf("Estacion YPF ONLINE.\n");
-    fflush(stdout);
-
-    // espera a que el hilo "consumo" termine
-    pthread_join(hilo_desgaste, NULL);
-    // -1 para cerrar el hilo estacion
-    MensajeNave cierre = {
-        .tipo_operacion = -1,
-        .id_nave = 0};
-    mq_send(cola_principal, (char *)&cierre, sizeof(MensajeNave), 0);
-
-    // espera a que el hilo de atencion termine
-    pthread_join(hilo_atencion, NULL);
-
-    // limpia los recursos
-    pthread_mutex_destroy(&estado.mutex_nafta);
-    pthread_mutex_destroy(&estado.mutex_oxigeno);
-    mq_close(cola_principal);
-    mq_unlink(nombre_cola);
-
-    printf("Estacion cerrada correctamente.\n");
-    return 0;
+    /* 7. APAGADO SEGURO */
+    endwin();
+    munmap(mapa_servidor, sizeof(MapaEspacial));
+    shm_unlink("/mapa_espacial");
+    close(shh_fd);
+    exit(EXIT_SUCCESS);
 }
 
-void *hiloAcciones(void *arg)
+void generarAsteroide(MapaEspacial *mapa, int cantidad)
 {
-    EstadoYPF *estado = (EstadoYPF *)arg;
-    MensajeNave msj;
+    int generados = 0;
 
-    char nombre_cola[50];
-    sprintf(nombre_cola, "/cola_estacion_%d", mi_id_global);
-
-    mqd_t cola = mq_open(nombre_cola, O_RDONLY);
-    if (cola == (mqd_t)-1)
+    while (generados < cantidad)
     {
-        perror("Error cola");
-        pthread_exit(NULL);
-    }
-    while (estado->corriendo)
-    {
+        int col = rand() % columnas;
+        int fila = rand() % filas;
 
-        if (mq_receive(cola, (char *)&msj, sizeof(MensajeNave), NULL) != -1)
+        int x = corIniX + col * celAnch;
+        int y = corIniY + fila * celAlt;
+
+        if (x == corIniX && y == corIniY)
+        { 
+            continue;
+        }
+
+        int ocupado = 0;
+        for (int i = 0; i < generados; i++)
         {
-
-            int id = msj.id_nave;
-
-            // La estación recibió la señal de cierre
-            if (msj.tipo_operacion == -1)
+            if (mapa->asteroides[i].x == x && mapa->asteroides[i].y == y)
             {
+                ocupado = 1; 
                 break;
             }
+        }
 
-            // vericio que la nave este activaa
-            if (id < 0 || id >= mapa_compartido->cantidad_naves_permitidas)
-            {
-                printf("error: id negativo o mayor al maximo de naves");
-                continue;
-            }
-            else if (!mapa_compartido->naves[id].activa)
-            {
-                printf("error: nave inactiva");
-                continue;
-            }
-
-            // Recarga de combustible
-            if (msj.tipo_operacion == 1)
-            {
-
-                pthread_mutex_lock(&estado->mutex_nafta);
-
-                int combustible_actual = mapa_compartido->naves[id].combustible;
-
-                int combustible_a_cargar;
-
-                if (combustible_actual > 90)
-                {
-                    combustible_a_cargar = 100 - combustible_actual;
-                }
-                else
-                {
-                    combustible_a_cargar = 10;
-                }
-
-                int costo_deuterio = combustible_a_cargar / 2;
-                if (combustible_actual < 100)
-                {
-
-                    if (estado->nafta >= combustible_a_cargar)
-                    {
-
-                        if (mapa_compartido->naves[id].deuterio >= costo_deuterio)
-                        {
-
-                            mapa_compartido->naves[id].deuterio -= costo_deuterio;
-                            estado->deuterio += costo_deuterio;
-
-                            estado->nafta -= combustible_a_cargar;
-                            estado->recolector1++;
-
-                            mapa_compartido->naves[id].combustible += combustible_a_cargar;
-
-                            printf("[ESTACION] Nave %d cargo %d de combustible pagando %d deuterio.\n", id, combustible_a_cargar, costo_deuterio);
-                        }
-                        else
-                        {
-                            printf("[ESTACION] La nave %d no tiene suficiente deuterio.\n", id);
-                        }
-                    }
-                    else
-                    {
-                        printf("[ESTACION] No hay nafta\n");
-                    }
-                }
-                else
-                {
-                    printf("[ESTACION] La nave %d tiene el tanque lleno.\n", id);
-                }
-
-                pthread_mutex_unlock(&estado->mutex_nafta);
-            }
-
-            //  oxigeno
-            else if (msj.tipo_operacion == 2)
-            {
-
-                pthread_mutex_lock(&estado->mutex_oxigeno);
-
-                int oxigeno_actual = mapa_compartido->naves[id].oxigeno;
-
-                bool puede_pagar = false;
-
-                if (mapa_compartido->naves[id].mutexio >= 1 &&
-                    mapa_compartido->naves[id].semaforita >= 1 &&
-                    mapa_compartido->naves[id].kernelio >= 1)
-                {
-
-                    puede_pagar = true;
-                }
-
-                if (oxigeno_actual < 100)
-                {
-
-                    if (estado->oxigeno >= 10)
-                    {
-
-                        if (puede_pagar)
-                        {
-
-                            int oxigeno_a_cargar;
-
-                            if (oxigeno_actual > 90)
-                            {
-                                oxigeno_a_cargar = 100 - oxigeno_actual;
-                            }
-                            else
-                            {
-                                oxigeno_a_cargar = 10;
-                            }
-
-                            mapa_compartido->naves[id].mutexio--;
-                            mapa_compartido->naves[id].semaforita--;
-                            mapa_compartido->naves[id].kernelio--;
-
-                            estado->oxigeno -= oxigeno_a_cargar;
-                            estado->recolector0 += 3;
-
-                            mapa_compartido->naves[id].oxigeno += oxigeno_a_cargar;
-
-                            printf("[ESTACION %d] Nave %d cargo %d de oxigeno.\n", mi_id_global, id, oxigeno_a_cargar);
-                        }
-                        else
-                        {
-                            printf("[ESTACION %d] La nave %d no tenes los minerales suficientes\n", mi_id_global, id);
-                        }
-                    }
-                    else
-                    {
-                        printf("[ESTACION %d] No tenemos oxigeno hoy\n", mi_id_global);
-                    }
-                }
-                else
-                {
-                    printf("[ESTACION %d] Nave %d ya tenes el oxigeno completo\n", mi_id_global, id);
-                }
-
-                pthread_mutex_unlock(&estado->mutex_oxigeno);
-            }
-
-            fflush(stdout);
+        if (!ocupado)
+        { 
+            mapa->asteroides[generados].x = x;
+            mapa->asteroides[generados].y = y;
+            mapa->asteroides[generados].deuterio = rand() % 2;
+            mapa->asteroides[generados].mutexio = rand() % 2;
+            mapa->asteroides[generados].semaforita = rand() % 2;
+            mapa->asteroides[generados].kernelio = rand() % 2;
+            mapa->asteroides[generados].activo = 1;
+            generados++;
         }
     }
-
-    mq_close(cola);
-    return NULL;
 }
 
-void *hiloConsumo(void *arg)
+void colisionProy(MapaEspacial *mapa)
 {
-    EstadoYPF *estado = (EstadoYPF *)arg;
-    while (estado->corriendo)
+    for (int i = 0; i < mapa->cantidad_naves_permitidas; i++)
     {
-        sleep(1);
-
-        pthread_mutex_lock(&estado->mutex_nafta);
-        // Si las naves compraron toda la nafta disponible se apaga
-        if (estado->nafta <= 0)
+        if (mapa->naves[i].activa && mapa->naves[i].disparo > 0)
         {
-            estado->corriendo = 0;
+            int xProyectil = mapa->naves[i].x;
+            int yProyectil = mapa->naves[i].y;
+            int dir = mapa->naves[i].disparo;
+
+            if (dir == 1) yProyectil -= 2; // arriba
+            else if (dir == 2) yProyectil += 2; // abajo
+            else if (dir == 3) xProyectil -= 4; // izquierda
+            else if (dir == 4) xProyectil += 4; // derecha
+
+            /*LÓGICA DE DAÑO HACIA OTRAS NAVES*/
+            for (int k = 0; k < mapa->cantidad_naves_permitidas; k++)
+            {
+                if (k != i && mapa->naves[k].activa && mapa->naves[k].x == xProyectil && mapa->naves[k].y == yProyectil)
+                {
+                    mapa->naves[k].oxigeno -= 20;
+                    mapa->naves[k].combustible -= 20;
+
+                    if (mapa->naves[k].oxigeno < 0) mapa->naves[k].oxigeno = 0;
+                    if (mapa->naves[k].combustible < 0) mapa->naves[k].combustible = 0;
+
+                    mapa->naves[i].disparo = 0;
+                    break;
+                }
+            }
+
+            /*LÓGICA DE DAÑO A ASTEROIDES*/
+            for (int j = 0; j < MAX_ASTEROIDES_FISICOS; j++)
+            {
+                if (mapa->asteroides[j].activo && mapa->asteroides[j].x == xProyectil && mapa->asteroides[j].y == yProyectil)
+                {
+                    mapa->asteroides[j].activo = 0;
+
+                    /*RECOMPENSAS DEL ASTEROIDE*/
+                    mapa->naves[i].mutexio += mapa->asteroides[j].mutexio;
+                    mapa->naves[i].semaforita += mapa->asteroides[j].semaforita;
+                    mapa->naves[i].kernelio += mapa->asteroides[j].kernelio;
+                    mapa->naves[i].deuterio += mapa->asteroides[j].deuterio;
+
+                    mapa->naves[i].disparo = 0;
+                    break;
+                }
+            }
         }
-        pthread_mutex_unlock(&estado->mutex_nafta);
     }
-    return NULL;
+}
+
+void generarEstacion(MapaEspacial *mapa, int cantidad)
+{
+    int generadas = 0;
+
+    while (generadas < cantidad)
+    {
+        int col = rand() % columnas;
+        int fila = rand() % filas;
+
+        int x = corIniX + col * celAnch;
+        int y = corIniY + fila * celAlt;
+
+        int ocupado = 0;
+
+        /*LÓGICA DE GENERACIÓN DE LA ESTACIÓN*/
+        for (int i = 0; i < MAX_ASTEROIDES_FISICOS; i++)
+        {
+            if (mapa->asteroides[i].activo && mapa->asteroides[i].x == x && mapa->asteroides[i].y == y)
+            {
+                ocupado = 1;
+                break;
+            }
+        }
+
+        /*Verificar que no caiga sobre otra estacion ya generada*/
+        for (int i = 0; i < generadas; i++)
+        {
+            if (mapa->estaciones[i].activa && mapa->estaciones[i].x == x && mapa->estaciones[i].y == y)
+            {
+                ocupado = 1;
+                break;
+            }
+        }
+
+        /*Si el lugar esta libre para la estacion, la guardamos en el arreglo*/
+        if (!ocupado)
+        {
+            mapa->estaciones[generadas].x = x;
+            mapa->estaciones[generadas].y = y;
+            mapa->estaciones[generadas].activa = 1;
+            generadas++;
+        }
+    }
 }
